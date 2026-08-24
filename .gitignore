@@ -1,0 +1,18 @@
+# macOS Finder metadata. Not anchored: these appear in any directory.
+.DS_Store
+
+# Scratch space for anything a working session produces. One fixed directory
+# per checkout rather than a per-session temp path, so artifacts are always
+# somewhere obvious to inspect and to delete.
+/.scratch/
+
+# Real recorded activities. A FIT file from a watch is personal data -- where
+# someone was, minute by minute, and what their heart was doing -- so no real
+# recording is ever committed here. fittest/ generates synthetic activities for
+# every test that does not specifically need a device file, and the one that
+# does is gated on FITACTIVITY_REAL_FIT pointing outside the repo.
+*.fit
+/example_files/
+
+# Local agent definitions.
+/.claude/agents/

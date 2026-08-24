@@ -1,0 +1,36 @@
+fitactivity
+Copyright 2026 Jesper Wisborg Krogh
+
+This product includes software developed by third parties, as listed below.
+Each component remains under its own license; the terms below are reproduced
+in satisfaction of those licenses' attribution requirements.
+
+
+-------------------------------------------------------------------------------
+BSD 3-Clause components
+-------------------------------------------------------------------------------
+
+  github.com/muktihari/fit   Copyright (c) 2023, Hikmatulloh Hari Mukti
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the conditions of the BSD 3-Clause
+License are met, including retention of the above copyright notice, this list
+of conditions, and the disclaimer of warranties.  Neither the name of the
+copyright holder nor the names of its contributors may be used to endorse or
+promote products derived from this software without specific prior written
+permission.
+
+
+-------------------------------------------------------------------------------
+The FIT protocol
+-------------------------------------------------------------------------------
+
+The FIT protocol and FIT file format are proprietary to Garmin and are subject
+to Garmin's FIT Protocol License.  This project reads FIT files using an
+independent third-party Go implementation (github.com/muktihari/fit) and
+neither includes nor distributes any part of Garmin's FIT SDK.  Note that the
+github.com/muktihari/fit repository ALSO ships a copy of Garmin's FIT Protocol
+License Agreement, which governs the parts of that repository generated from
+Garmin's SDK; this project imports only the decoder, profile and proto
+packages and does not redistribute the SDK-derived material.  This project is
+not affiliated with or endorsed by Garmin.
