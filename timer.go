@@ -237,6 +237,48 @@ func (m *TimerModel) Active(at time.Time) time.Duration {
 	return clampDuration(elapsed-paused, m.total)
 }
 
+// Paused reports whether at falls inside one of the activity's paused
+// intervals -- the same intervals Active subtracts, read as a boolean rather
+// than accumulated.
+//
+// It exists because a consumer rendering a frame at an arbitrary instant needs
+// to say so on screen (dim the readout, freeze the pace, print a marker), and
+// the alternative is deriving it from Active's derivative:
+// Active(at.Add(time.Second)) == Active(at). That works, and it is a SECOND
+// definition of "paused" living outside this type, free to drift from the one
+// Active uses -- most obviously at a boundary, where the derivative test reads
+// one second early. One list, one rule, one place to change it.
+//
+// The interval is half-open, [start, end): an instant exactly AT a pause's
+// start is paused, and one exactly at its end is running again. That is not a
+// free choice -- it is the convention Active already implements, which caps
+// each pause's contribution at the instant being asked about and so has
+// absorbed the whole pause by the time at reaches its end. The two would
+// otherwise disagree for exactly one instant per pause, which is the kind of
+// discrepancy that survives every test anyone thinks to write.
+//
+// An instant outside the activity's window is not paused -- it is not running
+// either, but "paused" is the wrong word for time before the start or after
+// the end, and Elapsed already clamps those. No clamping is needed here:
+// BuildTimerModel clips every pause to [start, end], so no pause can contain
+// an instant outside it.
+//
+// A track with no timer events has no pauses and is never paused; that is
+// indistinguishable from an activity that genuinely never stopped, and
+// HasTimerEvents is what tells the two apart.
+func (m *TimerModel) Paused(at time.Time) bool {
+	for _, p := range m.pauses {
+		if p.start.After(at) {
+			// Pauses are sorted ascending, so no later one can contain at.
+			break
+		}
+		if at.Before(p.end) {
+			return true
+		}
+	}
+	return false
+}
+
 // HasTimerEvents reports whether the track's file carried any `timer` event
 // at all. Active silently equals Elapsed both when the file genuinely had no
 // pauses AND when it carried no timer events to find them with, so a caller

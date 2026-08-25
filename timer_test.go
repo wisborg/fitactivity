@@ -549,3 +549,135 @@ func TestBuildPauses_MergesAdjacentPairsAndClipsToTheWindow(t *testing.T) {
 		}
 	})
 }
+
+// TestTimerModel_PausedMarksTheIntervalActiveSubtracts checks Paused against
+// hand-derived offsets on a fixture with a known pause, including both
+// boundaries.
+//
+// The boundaries are the whole point of the table. Paused is half-open --
+// [start, end) -- so the instant a pause begins is paused and the instant it
+// ends is not, and those two rows are the ones a re-implementation gets wrong.
+func TestTimerModel_PausedMarksTheIntervalActiveSubtracts(t *testing.T) {
+	opts := timerFixtureOptions()
+	opts.Pauses = []fittest.Pause{{Start: 100 * time.Second, End: 160 * time.Second}}
+
+	track, err := Decode(buildFixture(t, opts))
+	if err != nil {
+		t.Fatalf("Decode: %v", err)
+	}
+	model := BuildTimerModel(track)
+	start, _ := track.Coverage()
+
+	cases := []struct {
+		name   string
+		offset time.Duration
+		want   bool
+	}{
+		{"before the pause", 99 * time.Second, false},
+		{"exactly at the pause's start", 100 * time.Second, true},
+		{"one second in", 101 * time.Second, true},
+		{"mid-pause", 130 * time.Second, true},
+		{"one second before resuming", 159 * time.Second, true},
+		// Sub-second offsets are the normal case for a caller rendering video
+		// -- at 30 fps almost no frame lands on a whole second -- and this row
+		// is where the local derivation a caller might reach for goes wrong.
+		// Active(159.5s+1s) is 100.5s against Active(159.5s) of 100s, so the
+		// derivative is non-zero and reads "running" half a second before the
+		// pause actually ends.
+		{"half a second before resuming", 159*time.Second + 500*time.Millisecond, true},
+		{"exactly at the pause's end", 160 * time.Second, false},
+		{"after the pause", 200 * time.Second, false},
+		// Outside the activity's window: not running, but not paused either.
+		{"before the activity started", -30 * time.Second, false},
+		{"after the activity ended", 10000 * time.Second, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := model.Paused(start.Add(c.offset)); got != c.want {
+				t.Errorf("Paused(start+%v) = %v, want %v", c.offset, got, c.want)
+			}
+		})
+	}
+}
+
+// TestTimerModel_PausedAgreesWithActiveAcrossTheWholeActivity is the test that
+// makes Paused worth having upstream rather than derived by a caller.
+//
+// The property: Active advances at exactly the instants Paused reports as
+// running, and freezes at exactly the instants it reports as paused. Sweeping
+// the whole activity a second at a time and checking the two against each
+// other means the pair cannot drift -- which is the failure the local
+// derivation (Active(at+1s) == Active(at)) would eventually have produced,
+// since it reads one second early at every boundary.
+//
+// Note this is deliberately NOT how Paused is implemented. Asserting that two
+// independent readings of the same pause list agree is a real test; asserting
+// that a function agrees with itself is not.
+func TestTimerModel_PausedAgreesWithActiveAcrossTheWholeActivity(t *testing.T) {
+	opts := timerFixtureOptions()
+	opts.Pauses = []fittest.Pause{
+		{Start: 100 * time.Second, End: 160 * time.Second},
+		{Start: 400 * time.Second, End: 430 * time.Second},
+	}
+
+	track, err := Decode(buildFixture(t, opts))
+	if err != nil {
+		t.Fatalf("Decode: %v", err)
+	}
+	model := BuildTimerModel(track)
+	start, end := track.Coverage()
+
+	const step = time.Second
+	pausedSeconds, runningSeconds := 0, 0
+	for at := start; at.Before(end); at = at.Add(step) {
+		advanced := model.Active(at.Add(step)) > model.Active(at)
+		paused := model.Paused(at)
+		if paused == advanced {
+			t.Fatalf("at start+%v: Paused = %v but Active %s over the next second",
+				at.Sub(start), paused,
+				map[bool]string{true: "advanced", false: "froze"}[advanced])
+		}
+		if paused {
+			pausedSeconds++
+		} else {
+			runningSeconds++
+		}
+	}
+
+	// Guard against the sweep proving nothing because one side never occurred:
+	// a Paused that always returned false would agree with an Active that
+	// always advanced, and the loop above would pass without either being
+	// exercised.
+	if pausedSeconds == 0 || runningSeconds == 0 {
+		t.Fatalf("sweep saw %d paused and %d running seconds; it must see both to mean anything",
+			pausedSeconds, runningSeconds)
+	}
+	// 90 seconds of pause were built into the fixture. Derived from the
+	// options above, not read off a run.
+	if want := 90; pausedSeconds != want {
+		t.Errorf("sweep saw %d paused seconds, want %d", pausedSeconds, want)
+	}
+}
+
+// TestTimerModel_PausedIsFalseWithoutTimerEvents pins the case a caller must
+// not mistake for "never stopped": a file carrying no timer events has no
+// pauses to find, so Paused is false everywhere. HasTimerEvents is what tells
+// that apart from an activity that genuinely ran without stopping.
+func TestTimerModel_PausedIsFalseWithoutTimerEvents(t *testing.T) {
+	track, err := Decode(buildMinimalActivityFIT(t,
+		time.Date(2020, 1, 2, 3, 4, 5, 0, time.UTC),
+		time.Date(2020, 1, 2, 3, 14, 5, 0, time.UTC), true))
+	if err != nil {
+		t.Fatalf("Decode: %v", err)
+	}
+	model := BuildTimerModel(track)
+	if model.HasTimerEvents() {
+		t.Fatal("fixture unexpectedly carries timer events; this test needs one without")
+	}
+	start, end := track.Coverage()
+	for at := start; !at.After(end); at = at.Add(time.Minute) {
+		if model.Paused(at) {
+			t.Fatalf("Paused(start+%v) = true on a file with no timer events", at.Sub(start))
+		}
+	}
+}
