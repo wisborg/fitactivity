@@ -23,8 +23,8 @@ func scopeTrack(count int, metresPerSecond float64) *Track {
 		samples[i] = Sample{
 			Time:         scopeBase.Add(time.Duration(i) * time.Second),
 			HasGPS:       true,
-			Lat:          -27.4698 + float64(i)*1e-5,
-			Lon:          153.0251,
+			Lat:          12.345678 + float64(i)*1e-5,
+			Lon:          98.765432,
 			HasElevation: true,
 			Elevation:    30 + float64(i%20),
 			HasDistance:  true,

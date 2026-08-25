@@ -208,8 +208,8 @@ func DefaultOptions() Options {
 	return Options{
 		Start:        time.Date(2026, 7, 4, 20, 32, 56, 0, time.UTC),
 		Count:        16404,
-		StartLat:     -27.4698,
-		StartLon:     153.0251,
+		StartLat:     12.345678,
+		StartLon:     98.765432,
 		SpeedMPS:     3.0,
 		TotalAscent:  180,
 		TotalDescent: 175,
