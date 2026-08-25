@@ -346,7 +346,16 @@ func TestBuildTimerModel_EndComesFromTotalElapsedNotSessionTimestamp(t *testing.
 // (see fittest.buildTimerEvents), so Decode's OWN handling of an absent
 // Session and an empty Events list is otherwise never exercised by anything
 // built through the fixture package the rest of this file uses.
-func buildMinimalActivityFIT(t *testing.T, start, last time.Time, withSession bool) string {
+// buildMinimalActivityFIT writes an activity spanning start..last, optionally
+// with a Session message. sessionTotal overrides the session's TotalElapsed
+// when non-zero; zero derives it from last-start, which is what a device
+// normally writes.
+//
+// The override exists because a fixture whose session total happens to land on
+// its last record cannot distinguish "end comes from the session total" from
+// "end comes from the last sample" -- both rules give the same answer, and a
+// test asserting against it proves nothing about which one is implemented.
+func buildMinimalActivityFIT(t *testing.T, start, last time.Time, withSession bool, sessionTotal time.Duration) string {
 	t.Helper()
 
 	act := &filedef.Activity{
@@ -369,6 +378,10 @@ func buildMinimalActivityFIT(t *testing.T, start, last time.Time, withSession bo
 		// carries no `timer` events" looks like, whether or not it has a
 		// Session.
 	}
+	total := sessionTotal
+	if total == 0 {
+		total = last.Sub(start)
+	}
 	if withSession {
 		act.Activity.SetNumSessions(1)
 		act.Sessions = []*mesgdef.Session{
@@ -378,8 +391,8 @@ func buildMinimalActivityFIT(t *testing.T, start, last time.Time, withSession bo
 				SetSport(typedef.SportRunning).
 				SetEvent(typedef.EventSession).
 				SetEventType(typedef.EventTypeStop).
-				SetTotalElapsedTimeScaled(last.Sub(start).Seconds()).
-				SetTotalTimerTimeScaled(last.Sub(start).Seconds()),
+				SetTotalElapsedTimeScaled(total.Seconds()).
+				SetTotalTimerTimeScaled(total.Seconds()),
 		}
 	} else {
 		act.Activity.SetNumSessions(0)
@@ -416,7 +429,7 @@ func TestDecode_NoSessionMessageFallsBackToSampleTimes(t *testing.T) {
 	start := time.Date(2026, 4, 1, 8, 0, 0, 0, time.UTC)
 	last := start.Add(4 * time.Minute)
 
-	track, err := Decode(buildMinimalActivityFIT(t, start, last, false))
+	track, err := Decode(buildMinimalActivityFIT(t, start, last, false, 0))
 	if err != nil {
 		t.Fatalf("Decode: %v", err)
 	}
@@ -465,7 +478,7 @@ func TestDecode_SessionWithNoTimerEventsLeavesHasTimerEventsFalse(t *testing.T) 
 	start := time.Date(2026, 4, 1, 8, 0, 0, 0, time.UTC)
 	last := start.Add(4 * time.Minute)
 
-	track, err := Decode(buildMinimalActivityFIT(t, start, last, true))
+	track, err := Decode(buildMinimalActivityFIT(t, start, last, true, 0))
 	if err != nil {
 		t.Fatalf("Decode: %v", err)
 	}
@@ -666,7 +679,7 @@ func TestTimerModel_PausedAgreesWithActiveAcrossTheWholeActivity(t *testing.T) {
 func TestTimerModel_PausedIsFalseWithoutTimerEvents(t *testing.T) {
 	track, err := Decode(buildMinimalActivityFIT(t,
 		time.Date(2020, 1, 2, 3, 4, 5, 0, time.UTC),
-		time.Date(2020, 1, 2, 3, 14, 5, 0, time.UTC), true))
+		time.Date(2020, 1, 2, 3, 14, 5, 0, time.UTC), true, 0))
 	if err != nil {
 		t.Fatalf("Decode: %v", err)
 	}
@@ -679,5 +692,112 @@ func TestTimerModel_PausedIsFalseWithoutTimerEvents(t *testing.T) {
 		if model.Paused(at) {
 			t.Fatalf("Paused(start+%v) = true on a file with no timer events", at.Sub(start))
 		}
+	}
+}
+
+// TestTimerModel_WindowIsWhatElapsedMeasuresFrom pins Window against Elapsed
+// rather than against literals.
+//
+// The two must describe the same interval, because the whole reason Window
+// exists is to stop a caller rebuilding that interval and drifting from it.
+// Asserting Elapsed(start) == 0 and Elapsed(end) == end-start ties them
+// together: any change that moved one without the other fails here.
+func TestTimerModel_WindowIsWhatElapsedMeasuresFrom(t *testing.T) {
+	opts := timerFixtureOptions()
+	opts.Pauses = []fittest.Pause{{Start: 100 * time.Second, End: 160 * time.Second}}
+
+	track, err := Decode(buildFixture(t, opts))
+	if err != nil {
+		t.Fatalf("Decode: %v", err)
+	}
+	model := BuildTimerModel(track)
+	start, end := model.Window()
+
+	if start.IsZero() || end.IsZero() {
+		t.Fatalf("Window returned a zero instant: %v..%v", start, end)
+	}
+	if !end.After(start) {
+		t.Fatalf("Window end %v is not after start %v", end, start)
+	}
+	if got := model.Elapsed(start); got != 0 {
+		t.Errorf("Elapsed(window start) = %v, want 0", got)
+	}
+	if got, want := model.Elapsed(end), end.Sub(start); got != want {
+		t.Errorf("Elapsed(window end) = %v, want %v (the window's own span)", got, want)
+	}
+	// And the clamp: an instant past the end reads the same total, which is
+	// what makes the end the end.
+	if got, want := model.Elapsed(end.Add(time.Hour)), end.Sub(start); got != want {
+		t.Errorf("Elapsed(end+1h) = %v, want %v", got, want)
+	}
+	if got := model.Elapsed(start.Add(-time.Hour)); got != 0 {
+		t.Errorf("Elapsed(start-1h) = %v, want 0", got)
+	}
+}
+
+// TestTimerModel_WindowPrefersTheSessionTotalOverTheLastSample pins the
+// resolution rule itself -- the part a caller would otherwise have to rebuild,
+// and the part where rebuilding it wrong is silent.
+//
+// The fixture's session declares a total THIRTY SECONDS LONGER than its last
+// record, which is what makes the test discriminating: "end is start plus the
+// session total" and "end is the last sample" give different answers here, and
+// only the first is correct. An earlier version of this test used a fixture
+// where the two coincided and could not tell them apart -- it said so in a log
+// line, which is a test admitting it proves nothing.
+func TestTimerModel_WindowPrefersTheSessionTotalOverTheLastSample(t *testing.T) {
+	const (
+		recorded = 10 * time.Minute
+		declared = recorded + 30*time.Second
+	)
+	start := time.Date(2020, 1, 2, 3, 4, 5, 0, time.UTC)
+	last := start.Add(recorded)
+
+	track, err := Decode(buildMinimalActivityFIT(t, start, last, true, declared))
+	if err != nil {
+		t.Fatalf("Decode: %v", err)
+	}
+	if !track.Timing.HasTotals {
+		t.Fatal("precondition: the fixture's session must carry totals")
+	}
+	model := BuildTimerModel(track)
+	gotStart, gotEnd := model.Window()
+
+	if !gotStart.Equal(start) {
+		t.Errorf("Window start = %v, want the session's start_time %v", gotStart, start)
+	}
+	if want := start.Add(declared); !gotEnd.Equal(want) {
+		t.Errorf("Window end = %v, want start+TotalElapsed %v", gotEnd, want)
+	}
+	// The assertion that makes the one above mean something.
+	if gotEnd.Equal(last) {
+		t.Errorf("Window end fell on the last sample (%v); the session total should have won", last)
+	}
+	if got := model.Elapsed(gotEnd); got != declared {
+		t.Errorf("Elapsed(window end) = %v, want the declared total %v", got, declared)
+	}
+}
+
+// TestTimerModel_WindowFallsBackToTheSamplesWithoutSessionTotals covers the
+// other arm of the rule, on a file whose session carries no totals.
+func TestTimerModel_WindowFallsBackToTheSamplesWithoutSessionTotals(t *testing.T) {
+	start := time.Date(2020, 1, 2, 3, 4, 5, 0, time.UTC)
+	last := start.Add(10 * time.Minute)
+	track, err := Decode(buildMinimalActivityFIT(t, start, last, false, 0))
+	if err != nil {
+		t.Fatalf("Decode: %v", err)
+	}
+	if track.Timing.HasTotals {
+		t.Fatal("precondition: this fixture must carry no session totals")
+	}
+	model := BuildTimerModel(track)
+	gotStart, gotEnd := model.Window()
+
+	first, lastSample := track.Coverage()
+	if !gotStart.Equal(first) {
+		t.Errorf("Window start = %v, want the first sample %v", gotStart, first)
+	}
+	if !gotEnd.Equal(lastSample) {
+		t.Errorf("Window end = %v, want the last sample %v", gotEnd, lastSample)
 	}
 }

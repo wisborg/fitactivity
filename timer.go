@@ -237,6 +237,35 @@ func (m *TimerModel) Active(at time.Time) time.Duration {
 	return clampDuration(elapsed-paused, m.total)
 }
 
+// Window returns the activity's resolved extent: the instants Elapsed measures
+// from and clamps to.
+//
+// BuildTimerModel already decides what an activity's start and end ARE, and
+// the decision is not trivial -- start is the session's start_time when the
+// file carried one and the first sample's time otherwise, end is start plus
+// TotalElapsed when the session carried totals and the last sample's time
+// otherwise, and session.Timestamp is deliberately never used (see
+// ActivityTiming). Until this method existed that resolution was reachable
+// only through Elapsed's clamping, so a caller needing the window itself --
+// one laying out a video timeline over the activity, say -- had to rebuild the
+// rule from Track.Timing and the samples.
+//
+// That rebuild is the thing this exists to prevent. A second definition of
+// "when did this activity run" is free to disagree with the one Elapsed
+// clamps against, and when it does the disagreement is silent: a timeline
+// spanning a slightly different window than Elapsed measures produces a final
+// frame whose clock reads something other than the activity's own total, with
+// nothing anywhere reporting a problem.
+//
+// The window is CLOSED, [start, end]: end is the last instant of the
+// activity, and Elapsed(end) is its full duration. A caller laying frames over
+// it generally wants the half-open interval and should stop one step short of
+// end, which is a decision about frames rather than about the activity.
+//
+// Both values are zero for a Track with no samples and no session timing,
+// which is the only case where the activity has no extent to report.
+func (m *TimerModel) Window() (start, end time.Time) { return m.start, m.end }
+
 // Paused reports whether at falls inside one of the activity's paused
 // intervals -- the same intervals Active subtracts, read as a boolean rather
 // than accumulated.
