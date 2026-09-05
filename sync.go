@@ -159,6 +159,10 @@ func interpolateSample(lo, hi Sample, at time.Time, frac float64) Sample {
 		s.HasStepLength = true
 		s.StepLength = lerp(lo.StepLength, hi.StepLength, frac)
 	}
+	if lo.HasStanceTimeBalance && hi.HasStanceTimeBalance {
+		s.HasStanceTimeBalance = true
+		s.StanceTimeBalance = lerp(lo.StanceTimeBalance, hi.StanceTimeBalance, frac)
+	}
 
 	// A developer field interpolates only when both brackets report the
 	// same named field -- a key present in only one of lo/hi's DevFields

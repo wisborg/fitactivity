@@ -136,6 +136,44 @@ func TestAt_Midpoint_LinearValuesAndPresence(t *testing.T) {
 	}
 }
 
+// TestInterpolateSample_StanceTimeBalance pins the same per-field presence
+// rule interpolateSample already applies to every other field (see
+// TestAt_Midpoint_LinearValuesAndPresence): StanceTimeBalance interpolates
+// only when BOTH brackets carry it, and is left absent otherwise, so a
+// mid-run dropout (e.g. a disconnected footpod) on one side cannot leak into
+// a confidently-averaged number on the other.
+func TestInterpolateSample_StanceTimeBalance(t *testing.T) {
+	at := func(sec float64) time.Time { return synthBase.Add(time.Duration(sec * float64(time.Second))) }
+	tr := &Track{
+		Samples: []Sample{
+			{Time: at(0), HasStanceTimeBalance: true, StanceTimeBalance: 48.0},
+			{Time: at(1), HasStanceTimeBalance: true, StanceTimeBalance: 52.0},
+			{Time: at(2)}, // dropout: e.g. the footpod stopped reporting
+		},
+	}
+
+	mid := at(0.5)
+	got, ok := tr.At(mid)
+	if !ok {
+		t.Fatalf("At(%v) ok=false, want true", mid)
+	}
+	if !got.HasStanceTimeBalance {
+		t.Fatal("HasStanceTimeBalance = false, want true: present on both brackets")
+	}
+	if math.Abs(got.StanceTimeBalance-50.0) > 1e-9 {
+		t.Errorf("StanceTimeBalance = %v, want 50.0 ((48.0+52.0)/2)", got.StanceTimeBalance)
+	}
+
+	acrossDropout := at(1.5)
+	got, ok = tr.At(acrossDropout)
+	if !ok {
+		t.Fatalf("At(%v) ok=false, want true", acrossDropout)
+	}
+	if got.HasStanceTimeBalance {
+		t.Errorf("HasStanceTimeBalance = true (value=%v), want false: absent on one bracket", got.StanceTimeBalance)
+	}
+}
+
 func TestAt_OutOfRange(t *testing.T) {
 	tr := synthTrack()
 	first, last := tr.Coverage()

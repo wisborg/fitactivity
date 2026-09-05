@@ -1,6 +1,7 @@
 package fittest
 
 import (
+	"math"
 	"os"
 	"path/filepath"
 	"testing"
@@ -170,6 +171,122 @@ func TestBuildRoundTrips_PowerWatts(t *testing.T) {
 			}
 		}
 	})
+}
+
+// TestBuildRoundTrips_StanceTimeBalancePercent is TestBuildRoundTrips_PowerWatts'
+// counterpart for the native ground-contact-time-balance field: present when
+// set, and the FIT invalid sentinel -- not a written zero -- when left at the
+// Options zero value.
+func TestBuildRoundTrips_StanceTimeBalancePercent(t *testing.T) {
+	t.Run("StanceTimeBalancePercent set", func(t *testing.T) {
+		opts := DefaultOptions()
+		opts.Count = 5
+		const percent = 47.3
+		opts.StanceTimeBalancePercent = percent
+
+		data, err := Build(opts)
+		if err != nil {
+			t.Fatalf("Build: %v", err)
+		}
+		path := filepath.Join(t.TempDir(), "balance.fit")
+		if err := os.WriteFile(path, data, 0o644); err != nil {
+			t.Fatalf("writing fixture: %v", err)
+		}
+		act := decodeActivity(t, path)
+		if len(act.Records) != opts.Count {
+			t.Fatalf("decoded %d records, want %d", len(act.Records), opts.Count)
+		}
+		for i, rec := range act.Records {
+			if got := rec.StanceTimeBalanceScaled(); math.Abs(got-percent) > 1e-9 {
+				t.Errorf("record %d: StanceTimeBalanceScaled = %v, want %v", i, got, percent)
+			}
+		}
+	})
+
+	t.Run("DefaultOptions (StanceTimeBalancePercent unset) writes no field", func(t *testing.T) {
+		opts := DefaultOptions()
+		opts.Count = 5
+
+		data, err := Build(opts)
+		if err != nil {
+			t.Fatalf("Build: %v", err)
+		}
+		path := filepath.Join(t.TempDir(), "nobalance.fit")
+		if err := os.WriteFile(path, data, 0o644); err != nil {
+			t.Fatalf("writing fixture: %v", err)
+		}
+		act := decodeActivity(t, path)
+		if len(act.Records) != opts.Count {
+			t.Fatalf("decoded %d records, want %d", len(act.Records), opts.Count)
+		}
+		for i, rec := range act.Records {
+			// basetype.Uint16Invalid (0xFFFF), spelled as a literal for the
+			// same reason TestBuildRoundTrips_PowerWatts does: keeping this
+			// test's only imports unchanged.
+			if rec.StanceTimeBalance != 0xFFFF {
+				t.Errorf("record %d: StanceTimeBalance = %d, want the FIT invalid sentinel 0xFFFF (no field written)", i, rec.StanceTimeBalance)
+			}
+		}
+	})
+}
+
+// TestBuildRoundTrips_DeveloperFields confirms that the plural, ADDITIONAL
+// developer-field mechanism registers each name under its own
+// FieldDescription and field number, distinct from the singular legacy
+// DeveloperField -- three fields present together (as Stryd's balance metrics
+// will be, once a consumer names them) must decode as three independently
+// resolvable names, not collide on one field number or overwrite each other.
+func TestBuildRoundTrips_DeveloperFields(t *testing.T) {
+	opts := DefaultOptions()
+	opts.Count = 5
+	opts.DeveloperField = "Power"
+	names := []string{
+		"Impact Loading Rate Balance",
+		"Leg Spring Stiffness Balance",
+		"Vertical Oscillation Balance",
+	}
+	opts.DeveloperFields = names
+
+	data, err := Build(opts)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	path := filepath.Join(t.TempDir(), "balancefields.fit")
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatalf("writing fixture: %v", err)
+	}
+	act := decodeActivity(t, path)
+
+	wantDescriptions := 1 + len(names) // DeveloperField plus every DeveloperFields entry
+	if len(act.FieldDescriptions) != wantDescriptions {
+		t.Fatalf("decoded %d FieldDescriptions, want %d", len(act.FieldDescriptions), wantDescriptions)
+	}
+	gotNames := make(map[string]bool, len(act.FieldDescriptions))
+	for _, fd := range act.FieldDescriptions {
+		if len(fd.FieldName) > 0 {
+			gotNames[fd.FieldName[0]] = true
+		}
+	}
+	for _, name := range append([]string{opts.DeveloperField}, names...) {
+		if !gotNames[name] {
+			t.Errorf("FieldDescriptions missing %q, got %v", name, gotNames)
+		}
+	}
+
+	if len(act.Records) != opts.Count {
+		t.Fatalf("decoded %d records, want %d", len(act.Records), opts.Count)
+	}
+	for i, rec := range act.Records {
+		if got, want := len(rec.DeveloperFields), wantDescriptions; got != want {
+			t.Fatalf("record %d: %d developer fields, want %d", i, got, want)
+		}
+		for _, df := range rec.DeveloperFields {
+			raw, ok := df.Value.Any().(uint16)
+			if !ok || raw != DeveloperFieldRaw(i) {
+				t.Errorf("record %d: developer field num %d = %v, want %d", i, df.Num, df.Value.Any(), DeveloperFieldRaw(i))
+			}
+		}
+	}
 }
 
 func TestBuildRejectsUnusableOptions(t *testing.T) {

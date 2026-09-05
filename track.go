@@ -67,6 +67,22 @@ type Sample struct {
 	HasStepLength          bool
 	StepLength             float64 // mm
 
+	// HasStanceTimeBalance/StanceTimeBalance is one foot's share of total
+	// ground contact time: 50 means even, below 50 means the LEFT foot
+	// spends less time on the ground than the right (FIT does not say
+	// which foot 100% would be; this package only decodes the number).
+	// This is a distinct quantity from left_right_balance (power balance),
+	// which this package does not carry — see the two Stryd fields below,
+	// which measure yet other quantities again and are not comparable to
+	// this one.
+	//
+	// A recorded 0 is decoded and presented as-is: this package does not
+	// treat it as a sentinel for "absent" (only FIT's own type-specific
+	// invalid value is), so whether a 0 reading is plausible for a given
+	// activity is left for the caller that draws it to judge.
+	HasStanceTimeBalance bool
+	StanceTimeBalance    float64 // percent
+
 	// DevFields holds every developer field present on this Record,
 	// keyed by the human-readable name resolved from the FIT file's own
 	// FieldDescription messages (e.g. Stryd's "Power", "Form Power",
@@ -90,6 +106,22 @@ type Sample struct {
 // standard FIT power field (Sample.Power) with different values, since they
 // are literally different sensors' readings.
 const StrydPowerField = "Power"
+
+// StrydImpactLoadingRateBalanceField, StrydLegSpringStiffnessBalanceField and
+// StrydVerticalOscillationBalanceField are the developer-field keys a Stryd
+// footpod registers its three left/right balance metrics under (resolved
+// from the FIT file's own FieldDescription messages, the same as
+// StrydPowerField). Each measures a different quantity from the native
+// Sample.StanceTimeBalance above — impact loading rate, leg spring
+// stiffness and vertical oscillation, respectively, rather than ground
+// contact time — so none of them is a substitute for another, and this
+// package deliberately offers no "resolved balance" that would pick between
+// them the way ResolvedPower picks between power sources.
+const (
+	StrydImpactLoadingRateBalanceField   = "Impact Loading Rate Balance"
+	StrydLegSpringStiffnessBalanceField  = "Leg Spring Stiffness Balance"
+	StrydVerticalOscillationBalanceField = "Vertical Oscillation Balance"
+)
 
 // PowerSource selects which of a Sample's two possible power readings the
 // caller wants displayed: the vendor footpod's developer field (Stryd), the

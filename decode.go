@@ -228,6 +228,10 @@ func sampleFromRecord(rec *mesgdef.Record, devFields devFieldIndex) Sample {
 		s.HasStepLength = true
 		s.StepLength = sl
 	}
+	if stb := rec.StanceTimeBalanceScaled(); !invalidFloat(stb) {
+		s.HasStanceTimeBalance = true
+		s.StanceTimeBalance = stb
+	}
 
 	for _, df := range rec.DeveloperFields {
 		key, val, ok := resolveDevField(df, devFields)

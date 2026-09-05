@@ -136,6 +136,32 @@ type Options struct {
 	// 0, the default, leaves PowerWatts on every record, exactly as before
 	// this field existed. Ignored when PowerWatts is 0.
 	PoweredRecords int
+
+	// StanceTimeBalancePercent, when non-zero, writes the standard FIT
+	// Record.stance_time_balance field (see fitactivity.Sample.StanceTimeBalance)
+	// on every record at this constant percent value.
+	//
+	// 0, the default, writes no field at all, not a zero-valued one -- the
+	// same convention PowerWatts uses above and for the same reason: a
+	// fixture that leaves this unset must decode with HasStanceTimeBalance
+	// false on every sample, which a written zero would not do.
+	StanceTimeBalancePercent float64
+
+	// DeveloperFields registers and writes zero or more developer fields in
+	// ADDITION to the single legacy DeveloperField above, each under its own
+	// FieldDescription but sharing DeveloperField's DeveloperDataId
+	// (DeveloperDataIndex 0) -- mirroring a real footpod like Stryd, which
+	// registers a whole vocabulary of fields (Power, Ground Time, the three
+	// balance metrics, ...) together under one DeveloperDataId rather than
+	// one registration per field. DeveloperField's single name cannot express
+	// that, hence this separate slice.
+	//
+	// Every entry is written on every record at the same raw value
+	// DeveloperFieldRaw(i) already documents for DeveloperField, with no
+	// scale/offset applied -- so a test can derive the expected decoded value
+	// for any of these fields as exactly DeveloperFieldRaw(i), without this
+	// package inventing a distinct formula per field.
+	DeveloperFields []string
 }
 
 // Pause is one stop/resume interval within a fixture, as offsets from
@@ -272,12 +298,14 @@ func Build(opts Options) ([]byte, error) {
 		Events: buildTimerEvents(opts, end),
 	}
 
+	// A developer field is only interpretable through the pair of messages
+	// that declare it: the DeveloperDataId registers the application, and a
+	// FieldDescription names, types and scales one of its fields. Field
+	// numbers are unique only within a DeveloperDataId (see devFieldIndex's
+	// doc comment in the main package), which is why every field below
+	// shares DeveloperDataIndex 0 and gets its own FieldDefinitionNumber.
+	var fieldDescs []*mesgdef.FieldDescription
 	if opts.DeveloperField != "" {
-		// A developer field is only interpretable through the pair of
-		// messages that declare it: the DeveloperDataId registers the
-		// application, and the FieldDescription names, types and scales one
-		// of its fields. Field numbers are unique only within a
-		// DeveloperDataId, which is why both are written.
 		fd := mesgdef.NewFieldDescription(nil).
 			SetDeveloperDataIndex(0).
 			SetFieldDefinitionNumber(devFieldNum).
@@ -289,12 +317,22 @@ func Build(opts Options) ([]byte, error) {
 		if opts.DeveloperFieldOffset != 0 {
 			fd.SetOffset(opts.DeveloperFieldOffset)
 		}
+		fieldDescs = append(fieldDescs, fd)
+	}
+	for i, name := range opts.DeveloperFields {
+		fieldDescs = append(fieldDescs, mesgdef.NewFieldDescription(nil).
+			SetDeveloperDataIndex(0).
+			SetFieldDefinitionNumber(devFieldNum+1+uint8(i)).
+			SetFitBaseTypeId(basetype.Uint16).
+			SetFieldName([]string{name}))
+	}
+	if len(fieldDescs) > 0 {
 		act.DeveloperDataIds = []*mesgdef.DeveloperDataId{
 			mesgdef.NewDeveloperDataId(nil).
 				SetDeveloperDataIndex(0).
 				SetApplicationId([]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}),
 		}
-		act.FieldDescriptions = []*mesgdef.FieldDescription{fd}
+		act.FieldDescriptions = fieldDescs
 	}
 
 	// One degree of latitude is ~111.32 km everywhere; the course runs due
@@ -341,12 +379,31 @@ func Build(opts Options) ([]byte, error) {
 			rec.SetPower(opts.PowerWatts)
 		}
 
+		if opts.StanceTimeBalancePercent != 0 {
+			// Same reasoning as PowerWatts above: leaving the call out
+			// entirely, rather than calling it with 0, is what keeps
+			// Decode's HasStanceTimeBalance false for a fixture that never
+			// set this option.
+			rec.SetStanceTimeBalanceScaled(opts.StanceTimeBalancePercent)
+		}
+
+		var devFields []proto.DeveloperField
 		if opts.DeveloperField != "" {
-			rec.SetDeveloperFields(proto.DeveloperField{
+			devFields = append(devFields, proto.DeveloperField{
 				DeveloperDataIndex: 0,
 				Num:                devFieldNum,
 				Value:              proto.Uint16(DeveloperFieldRaw(i)),
 			})
+		}
+		for j := range opts.DeveloperFields {
+			devFields = append(devFields, proto.DeveloperField{
+				DeveloperDataIndex: 0,
+				Num:                devFieldNum + 1 + uint8(j),
+				Value:              proto.Uint16(DeveloperFieldRaw(i)),
+			})
+		}
+		if len(devFields) > 0 {
+			rec.SetDeveloperFields(devFields...)
 		}
 
 		act.Records = append(act.Records, rec)
@@ -362,7 +419,7 @@ func Build(opts Options) ([]byte, error) {
 	// producing a file no decoder could read. The version is raised only for
 	// the fixtures that need it, so the ordinary fixture's bytes are unchanged.
 	var encOpts []encoder.Option
-	if opts.DeveloperField != "" {
+	if opts.DeveloperField != "" || len(opts.DeveloperFields) > 0 {
 		encOpts = append(encOpts, encoder.WithProtocolVersion(proto.V2))
 	}
 

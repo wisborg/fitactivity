@@ -363,6 +363,46 @@ func TestSampleFromRecord_ValidGPS(t *testing.T) {
 	}
 }
 
+// TestSampleFromRecord_StanceTimeBalance pins the same invalid-sentinel
+// handling every other running-dynamics field already gets (see
+// VerticalOscillation/StanceTime/StepLength), plus the one thing that makes
+// this field different from most of its neighbours: a RECORDED 0 is a
+// legitimate reading (100% on one foot, 0% on the other is nonsensical for a
+// runner, but this package does not get to decide that -- see
+// Sample.StanceTimeBalance's doc comment) and must decode present, not be
+// mistaken for FIT's own invalid sentinel.
+func TestSampleFromRecord_StanceTimeBalance(t *testing.T) {
+	for _, c := range []struct {
+		name          string
+		set           bool
+		percent       float64
+		wantHas       bool
+		wantStanceBal float64
+	}{
+		{"present, even balance", true, 50.0, true, 50.0},
+		{"present, imbalanced", true, 47.3, true, 47.3},
+		{"present, recorded zero is still present", true, 0.0, true, 0.0},
+		{"absent (field never set)", false, 0, false, 0},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			rec := mesgdef.NewRecord(nil)
+			rec.Timestamp = time.Date(2020, 1, 2, 3, 4, 5, 0, time.UTC)
+			if c.set {
+				rec.SetStanceTimeBalanceScaled(c.percent)
+			}
+
+			s := sampleFromRecord(rec, nil)
+
+			if s.HasStanceTimeBalance != c.wantHas {
+				t.Errorf("HasStanceTimeBalance = %v, want %v", s.HasStanceTimeBalance, c.wantHas)
+			}
+			if c.wantHas && math.Abs(s.StanceTimeBalance-c.wantStanceBal) > 1e-9 {
+				t.Errorf("StanceTimeBalance = %v, want %v", s.StanceTimeBalance, c.wantStanceBal)
+			}
+		})
+	}
+}
+
 // TestSampleFromRecord_UnresolvedDevField confirms the fallback path in
 // resolveDevField: a developer field whose (developerDataIndex, num)
 // pair has no matching FieldDescription (e.g. a truncated file, or one
