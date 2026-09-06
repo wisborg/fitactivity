@@ -801,3 +801,175 @@ func TestTimerModel_WindowFallsBackToTheSamplesWithoutSessionTotals(t *testing.T
 		t.Errorf("Window end = %v, want the last sample %v", gotEnd, lastSample)
 	}
 }
+
+// TestTimerModel_PausesReportsTheIntervalsActiveSubtracts checks the list
+// against the pauses the fixture was built with, at both boundaries of each.
+//
+// The boundaries carry the same weight they carry for Paused: the interval is
+// half-open, so a caller laying frames over the stretches BETWEEN these
+// intervals must be able to trust that End is the first running instant
+// rather than the last paused one. An off-by-one there is a frame of a paused
+// dashboard in a render whose whole point was to cut them out.
+func TestTimerModel_PausesReportsTheIntervalsActiveSubtracts(t *testing.T) {
+	opts := timerFixtureOptions()
+	opts.Pauses = []fittest.Pause{
+		{Start: 100 * time.Second, End: 160 * time.Second},
+		{Start: 400 * time.Second, End: 430 * time.Second},
+	}
+
+	track, err := Decode(buildFixture(t, opts))
+	if err != nil {
+		t.Fatalf("Decode: %v", err)
+	}
+	model := BuildTimerModel(track)
+	start, _ := model.Window()
+
+	want := []Pause{
+		{Start: start.Add(100 * time.Second), End: start.Add(160 * time.Second)},
+		{Start: start.Add(400 * time.Second), End: start.Add(430 * time.Second)},
+	}
+	got := model.Pauses()
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("Pauses() = %v, want %v", got, want)
+	}
+}
+
+// TestTimerModel_PausesAgreesWithPausedEverywhere is the test that makes this
+// accessor worth having upstream rather than rebuilt by a caller.
+//
+// The property: an instant is inside one of the returned intervals exactly
+// when Paused says it is paused. Sweeping the activity a second at a time,
+// and both boundaries of every interval exactly, means the list and the
+// point query cannot drift apart -- which is the whole reason a caller is
+// being told to ask for the list instead of sampling for it.
+//
+// Deliberately not implemented the way Paused is: this reads the returned
+// slice, Paused walks the internal one. Asserting a function agrees with
+// itself would prove nothing.
+func TestTimerModel_PausesAgreesWithPausedEverywhere(t *testing.T) {
+	opts := timerFixtureOptions()
+	opts.Pauses = []fittest.Pause{
+		{Start: 100 * time.Second, End: 160 * time.Second},
+		{Start: 400 * time.Second, End: 430 * time.Second},
+	}
+
+	track, err := Decode(buildFixture(t, opts))
+	if err != nil {
+		t.Fatalf("Decode: %v", err)
+	}
+	model := BuildTimerModel(track)
+	start, end := model.Window()
+	pauses := model.Pauses()
+
+	inList := func(at time.Time) bool {
+		for _, p := range pauses {
+			if !at.Before(p.Start) && at.Before(p.End) {
+				return true
+			}
+		}
+		return false
+	}
+
+	for at := start; !at.After(end); at = at.Add(time.Second) {
+		if got, want := inList(at), model.Paused(at); got != want {
+			t.Fatalf("at %v: the list says paused=%v, Paused says %v", at.Sub(start), got, want)
+		}
+	}
+	// Then the boundaries themselves, which a one-second sweep can step
+	// straight over and which are where a half-open/closed mix-up shows.
+	for _, p := range pauses {
+		for _, c := range []struct {
+			name string
+			at   time.Time
+			want bool
+		}{
+			{"one nanosecond before the start", p.Start.Add(-time.Nanosecond), false},
+			{"exactly at the start", p.Start, true},
+			{"one nanosecond before the end", p.End.Add(-time.Nanosecond), true},
+			{"exactly at the end", p.End, false},
+		} {
+			if got := inList(c.at); got != c.want {
+				t.Errorf("pause %v-%v, %s: the list says paused=%v, want %v (and Paused says %v)",
+					p.Start.Sub(start), p.End.Sub(start), c.name, got, c.want, model.Paused(c.at))
+			}
+		}
+	}
+}
+
+// TestTimerModel_PausesHandsOutACopy pins the defensive copy. A caller that
+// truncates or reorders what it was given must not be able to change what
+// Active subtracts -- the mutation would take effect arbitrarily far from
+// here, in a render whose clocks then quietly disagree with `inspect`.
+func TestTimerModel_PausesHandsOutACopy(t *testing.T) {
+	opts := timerFixtureOptions()
+	opts.Pauses = []fittest.Pause{{Start: 100 * time.Second, End: 160 * time.Second}}
+
+	track, err := Decode(buildFixture(t, opts))
+	if err != nil {
+		t.Fatalf("Decode: %v", err)
+	}
+	model := BuildTimerModel(track)
+	start, end := model.Window()
+
+	before := model.Active(end)
+	got := model.Pauses()
+	got[0].Start = start
+	got[0].End = end
+	if after := model.Active(end); after != before {
+		t.Errorf("Active(end) = %v after mutating the slice Pauses returned, was %v; the slice must be a copy", after, before)
+	}
+	if again := model.Pauses(); !reflect.DeepEqual(again, []Pause{{Start: start.Add(100 * time.Second), End: start.Add(160 * time.Second)}}) {
+		t.Errorf("Pauses() = %v after the mutation; the internal list must be untouched", again)
+	}
+}
+
+// TestTimerModel_PausedTotalMatchesElapsedMinusActive pins the identity the
+// method's doc comment claims. It is derived from the list rather than from
+// this subtraction precisely so that the two are independent enough for this
+// assertion to mean something.
+func TestTimerModel_PausedTotalMatchesElapsedMinusActive(t *testing.T) {
+	opts := timerFixtureOptions()
+	opts.Pauses = []fittest.Pause{
+		{Start: 100 * time.Second, End: 160 * time.Second},
+		{Start: 400 * time.Second, End: 430 * time.Second},
+	}
+
+	track, err := Decode(buildFixture(t, opts))
+	if err != nil {
+		t.Fatalf("Decode: %v", err)
+	}
+	model := BuildTimerModel(track)
+	_, end := model.Window()
+
+	if got, want := model.PausedTotal(), model.Elapsed(end)-model.Active(end); got != want {
+		t.Errorf("PausedTotal() = %v, want %v (Elapsed(end) - Active(end))", got, want)
+	}
+	if got, want := model.PausedTotal(), 90*time.Second; got != want {
+		t.Errorf("PausedTotal() = %v, want %v (the two fixture pauses)", got, want)
+	}
+}
+
+// TestTimerModel_PausesIsNilWithoutTimerEvents covers the case a caller must
+// not read as "we looked and there were none": a file with no timer events
+// has nothing to find pauses in, and HasTimerEvents is what says so. Nil is
+// the same answer an activity that genuinely never stopped gets, which is
+// exactly why the two are told apart by a different method.
+func TestTimerModel_PausesIsNilWithoutTimerEvents(t *testing.T) {
+	track, err := Decode(buildMinimalActivityFIT(t,
+		time.Date(2020, 1, 2, 3, 4, 5, 0, time.UTC),
+		time.Date(2020, 1, 2, 3, 14, 5, 0, time.UTC), true, 0))
+	if err != nil {
+		t.Fatalf("Decode: %v", err)
+	}
+	model := BuildTimerModel(track)
+
+	if model.HasTimerEvents() {
+		t.Fatalf("fixture carries timer events; this test needs one that does not")
+	}
+	if got := model.Pauses(); got != nil {
+		t.Errorf("Pauses() = %v, want nil", got)
+	}
+	if got := model.PausedTotal(); got != 0 {
+		t.Errorf("PausedTotal() = %v, want 0", got)
+	}
+}

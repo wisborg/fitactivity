@@ -266,6 +266,78 @@ func (m *TimerModel) Active(at time.Time) time.Duration {
 // which is the only case where the activity has no extent to report.
 func (m *TimerModel) Window() (start, end time.Time) { return m.start, m.end }
 
+// Pause is one of an activity's paused stretches, as Pauses reports them:
+// the instant the timer stopped and the instant it started again, already
+// clipped to the activity's window and merged with any pause it touched.
+//
+// The interval is HALF-OPEN, [Start, End) -- the same convention Paused
+// implements and Active's accumulation implies. An instant exactly at Start
+// is paused; one exactly at End is running again. A caller that reads this
+// as closed disagrees with Paused for exactly one instant per pause, which
+// is the kind of discrepancy that survives every test anyone thinks to
+// write, so it is stated here rather than left to be inferred from the
+// field names.
+type Pause struct {
+	Start, End time.Time
+}
+
+// Pauses returns the activity's paused stretches, ascending, non-overlapping
+// and clipped to the window Window reports.
+//
+// It is the same list Active subtracts and Paused tests against, handed over
+// whole rather than one instant at a time. Both of those answer a question
+// ABOUT an instant the caller already has; this answers "where are they",
+// which a caller laying a video timeline over the running stretches -- or
+// reporting how much of the recording was spent stopped -- has no way to ask
+// otherwise.
+//
+// Adding it is what stops that caller from building its own list. There are
+// two ways to do that without this method and both are worse than they look:
+// sampling Paused on a grid silently misses any pause shorter than the step
+// (fitdash's highlightLiesInPause samples deliberately, and can only afford
+// to because it asks a much weaker question -- "was this whole span paused"
+// -- that a handful of points genuinely settles), and inverting
+// Elapsed-Active by binary search is exact but is a second derivation of
+// where the pauses are, living outside the type that owns them and free to
+// drift from it. One list, one rule, one place to change it -- the same
+// argument Paused's own doc comment makes for existing at all.
+//
+// The returned slice is a COPY. The internal one is built once at
+// construction and read by Active on every frame of a render; handing it out
+// directly would let a caller reslice or sort it and change what Active
+// subtracts, from arbitrarily far away, with nothing at the mutation site
+// suggesting it had touched the activity's timing.
+//
+// Nil for a track with no timer events, and also nil for one that carried
+// them and genuinely never stopped. Those two are not the same thing and
+// this method cannot tell them apart; HasTimerEvents is what does.
+func (m *TimerModel) Pauses() []Pause {
+	if len(m.pauses) == 0 {
+		return nil
+	}
+	out := make([]Pause, len(m.pauses))
+	for i, p := range m.pauses {
+		out[i] = Pause{Start: p.start, End: p.end}
+	}
+	return out
+}
+
+// PausedTotal is how much of the activity's elapsed time was spent stopped:
+// the sum of every interval Pauses reports, and exactly
+// Elapsed(end) - Active(end) for the end Window reports.
+//
+// Derived from the same list rather than from that subtraction, so the two
+// cannot disagree at the boundaries, and offered as a method because the
+// subtraction is the sort of thing a caller writes slightly differently each
+// time it needs it.
+func (m *TimerModel) PausedTotal() time.Duration {
+	var total time.Duration
+	for _, p := range m.pauses {
+		total += p.end.Sub(p.start)
+	}
+	return total
+}
+
 // Paused reports whether at falls inside one of the activity's paused
 // intervals -- the same intervals Active subtracts, read as a boolean rather
 // than accumulated.
