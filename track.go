@@ -212,7 +212,23 @@ type Track struct {
 	// SourcePath is the FIT file Decode read this Track from, kept for
 	// diagnostics and for later phases that need to relate a Track back
 	// to the file it came from (e.g. a GPX sidecar's provenance).
+	//
+	// On a Track from Merge this is the EARLIEST file's path -- one real
+	// path, never a joined list, so a caller deriving a name or a message
+	// from it can keep treating it as a path. Sources below is where the
+	// rest of them are.
 	SourcePath string
+
+	// Sources is every file this Track was built from, in the order they
+	// occur in time -- one entry for a decoded file, several for a Merge of
+	// a workout recorded in pieces. SourcePath is always Sources[0].
+	//
+	// It exists because "which files went into this?" has no honest answer
+	// in a single string once a Track can be merged, and the question is
+	// asked by exactly the code that must not guess: a consumer naming an
+	// output file after its input, and one reporting an activity's
+	// provenance to a reader checking a surprising total.
+	Sources []string
 
 	// Sport is the activity's reported sport (e.g. "running"), taken
 	// from the FIT file's first Session message. It is empty when the

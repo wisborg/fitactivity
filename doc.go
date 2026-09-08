@@ -13,7 +13,10 @@
 //
 // # What is here
 //
-// Decode (decode.go) reads the file. Track.At/AtWithGap (sync.go)
+// Decode (decode.go) reads the file, and Merge/DecodeAll (merge.go) combine
+// several into one Track for a workout split across files -- a race recorded
+// separately inside a long run -- rebasing the per-file cumulative distance
+// and refusing two recordings of the same stretch. Track.At/AtWithGap (sync.go)
 // interpolates the Track at an arbitrary instant, with explicit per-field
 // presence propagation and a configurable max-gap so a data dropout is never
 // papered over with a fabricated straight line; Track.Window/Resample slice

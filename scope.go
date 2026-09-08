@@ -226,8 +226,8 @@ func BuildScopedActivity(track *Track, sync Sync, scope Scope) *ScopedActivity {
 		}
 	}
 
-	// SourcePath and Sport describe the file this came from, not how much of
-	// it is in view, so they survive scoping. TotalAscent/TotalDescent and
+	// SourcePath, Sources and Sport describe the file(s) this came from, not
+	// how much of it is in view, so they survive scoping. TotalAscent/TotalDescent and
 	// HasElevationTotals deliberately do not -- see the doc comment.
 	//
 	// Timing DOES survive, and for the same reason SourcePath/Sport do: it
@@ -248,6 +248,7 @@ func BuildScopedActivity(track *Track, sync Sync, scope Scope) *ScopedActivity {
 	// this line, whether a clip inherits it.
 	scoped := &Track{
 		SourcePath: track.SourcePath,
+		Sources:    track.Sources,
 		Sport:      track.Sport,
 		Samples:    track.Window(sync.Start, sync.End),
 		Timing:     track.Timing,

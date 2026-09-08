@@ -127,6 +127,7 @@ func Decode(path string) (*Track, error) {
 
 	return &Track{
 		SourcePath:         path,
+		Sources:            []string{path},
 		Sport:              sport,
 		Samples:            samples,
 		TotalAscent:        totalAscent,
