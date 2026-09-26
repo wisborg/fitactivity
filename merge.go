@@ -6,9 +6,10 @@ import (
 	"time"
 )
 
-// DecodeAll decodes every path and Merges the results into a single Track,
+// DecodeAll Reads every path and Merges the results into a single Track,
 // ordered by each file's own start time rather than by the order the paths
-// were given. One path is decoded and returned unchanged, so a caller that
+// were given. Each path may be in any format Read takes, and they need not
+// agree: a race recorded as FIT inside a run exported as GPX merges the same. One path is decoded and returned unchanged, so a caller that
 // accepts a variable number of activities can call this unconditionally
 // instead of branching on the count.
 //
@@ -21,7 +22,7 @@ func DecodeAll(paths ...string) (*Track, error) {
 	}
 	tracks := make([]*Track, len(paths))
 	for i, p := range paths {
-		t, err := Decode(p)
+		t, err := Read(p)
 		if err != nil {
 			return nil, err
 		}

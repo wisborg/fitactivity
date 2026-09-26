@@ -1,13 +1,13 @@
 # fitactivity
 
-Go package for reading a Garmin FIT activity file and deriving the models a
-program draws or exports from: an interpolatable track, an elevation profile,
+Go package for reading a recorded activity — FIT, GPX, TCX, KML or KMZ — and
+deriving the models a program draws or exports from: an interpolatable track, an elevation profile,
 kilometre splits, and an elapsed-versus-active timer.
 
 ```go
 import "github.com/wisborg/fitactivity"
 
-track, err := fitactivity.Decode("activity.fit")
+track, err := fitactivity.Read("activity.fit") // or .gpx, .tcx, .kml, .kmz
 if err != nil {
     return err
 }
@@ -56,6 +56,8 @@ pays off if you preserve it. A gauge that renders a missing heart rate as
 | | |
 |---|---|
 | `Decode` | FIT file → `*Track`: sorted `Sample`s, sport, session totals, timer events |
+| `Read` | FIT, GPX, TCX, KML or KMZ → `*Track`, told apart by content; a file without a time on every point is refused with `ErrNoTimes` rather than given invented ones |
+| `ReadRoute` | any of those → `*Route`, the geometry alone: what a planned route has, and what a map needs |
 | `Track.At` / `AtWithGap` | the track interpolated at an arbitrary instant, with per-field presence carried through and a max-gap that refuses to invent data across a dropout |
 | `Track.Window` / `Resample` | a stretch of the track, raw or on a fixed step |
 | `BuildElevationModel` | smoothed elevation with its own distance axis, cumulative gain/loss, and grade — tuned to the session's own ascent/descent totals where the file reports them |

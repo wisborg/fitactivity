@@ -13,7 +13,10 @@
 //
 // # What is here
 //
-// Decode (decode.go) reads the file, and Merge/DecodeAll (merge.go) combine
+// Decode (decode.go) reads a FIT file, and Read (read.go) any of FIT, GPX,
+// TCX, KML and KMZ, told apart by content; ReadRoute reads the geometry alone
+// from any of them, which is all a planned route without times has -- a Track
+// is never given invented ones. Merge/DecodeAll (merge.go) combine
 // several into one Track for a workout split across files -- a race recorded
 // separately inside a long run -- rebasing the per-file cumulative distance
 // and refusing two recordings of the same stretch. Track.At/AtWithGap (sync.go)
