@@ -107,6 +107,14 @@ type Sample struct {
 // are literally different sensors' readings.
 const StrydPowerField = "Power"
 
+// StrydAirPowerField is the developer-field key a Stryd footpod registers its
+// air power under: its estimate of the part of running power spent against
+// the air, which is mostly headwind -- so unlike the rest of a run's power it
+// depends on which way the course faces and what shelters it. It is part of
+// StrydPowerField's total, not added to it, and has no counterpart among the
+// standard FIT fields.
+const StrydAirPowerField = "Air Power"
+
 // StrydImpactLoadingRateBalanceField, StrydLegSpringStiffnessBalanceField and
 // StrydVerticalOscillationBalanceField are the developer-field keys a Stryd
 // footpod registers its three left/right balance metrics under (resolved
