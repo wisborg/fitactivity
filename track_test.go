@@ -91,3 +91,20 @@ func TestTrackHasPower_FollowsTheSameResolutionTheGaugeDoes(t *testing.T) {
 		})
 	}
 }
+
+// Running, walking and hiking count one leg's strides and are shown as steps
+// a minute; anything else, an unknown or empty sport included, as recorded.
+func TestCadenceUnit(t *testing.T) {
+	for sport, want := range map[string]struct {
+		factor float64
+		unit   string
+	}{
+		"running": {2, "spm"}, "Walking": {2, "spm"}, "HIKING": {2, "spm"},
+		"cycling": {1, "rpm"}, "fitness_equipment": {1, "rpm"}, "rowing": {1, "rpm"},
+		"swimming": {1, "rpm"}, "": {1, "rpm"}, "kitesurfing": {1, "rpm"},
+	} {
+		if f, u := CadenceUnit(sport); f != want.factor || u != want.unit {
+			t.Errorf("CadenceUnit(%q) = %v %s, want %v %s", sport, f, u, want.factor, want.unit)
+		}
+	}
+}

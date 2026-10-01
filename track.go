@@ -1,6 +1,9 @@
 package fitactivity
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 // Sample is one Record message from a FIT activity file, converted to
 // plain Go values with FIT's per-field invalid sentinels resolved into
@@ -40,6 +43,10 @@ type Sample struct {
 	HasHeartRate bool
 	HeartRate    uint8 // bpm
 
+	// HasCadence/Cadence are FIT's Record.cadence, in its unit: revolutions
+	// a minute, which for running and walking is ONE leg's steps -- half
+	// the steps a minute a runner knows. See CadenceUnit for the number to
+	// show.
 	HasCadence bool
 	Cadence    uint8 // rpm
 
@@ -280,4 +287,28 @@ func (t *Track) Coverage() (first, last time.Time) {
 		return time.Time{}, time.Time{}
 	}
 	return t.Samples[0].Time, t.Samples[len(t.Samples)-1].Time
+}
+
+// CadenceUnit is how cadence is counted in sport -- a Track.Sport -- as the
+// factor a recorded Sample.Cadence is multiplied by and the unit that gives.
+//
+// FIT records cadence in revolutions a minute, and for running, walking and
+// hiking a revolution is one leg's stride: the number a runner knows, steps
+// a minute, is twice it. Those sports get 2 and "spm". Every other sport
+// keeps the recorded number and its recorded unit, 1 and "rpm" -- a ride's
+// pedal revolutions and an elliptical's are already the number shown, and
+// rowing records one per stroke. That includes a sport this package has not
+// heard of and an empty one: the recorded number under its recorded unit
+// cannot be wrong, where a guessed doubling would halve or double somebody's
+// cadence.
+//
+// The sport is matched case-insensitively, being a device's vocabulary.
+// One rule here, so videofx, fitdash and course show one cadence for one
+// file.
+func CadenceUnit(sport string) (factor float64, unit string) {
+	switch strings.ToLower(sport) {
+	case "running", "walking", "hiking":
+		return 2, "spm"
+	}
+	return 1, "rpm"
 }
