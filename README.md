@@ -66,6 +66,7 @@ pays off if you preserve it. A gauge that renders a missing heart rate as
 | `Resolve`, `BuildClipPoints`, `Scope` | pairing an activity with a video clip recorded during it — camera-clock vs. watch-clock re-basing and clip scoping |
 | `WriteGPX`, `WriteSRT` | GPX 1.1 and subtitle sidecars |
 | `fittest` | generates synthetic FIT activities, so tests need no real recording |
+| `units` | the units numbers are shown in — metric, imperial, or one by one (a flight's feet, nautical miles and knots) — with conversions from SI and pace and speed formatting |
 
 The last three rows serve videofx specifically; a consumer with no video in the
 picture can ignore them.
