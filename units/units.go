@@ -150,6 +150,17 @@ func (s *Set) Use(q Quantity, name string) error {
 	return nil
 }
 
+// UseSpec is Use for a spec written quantity=unit -- "distance=mi",
+// "speed=kn" -- the way a command line gives one, so that every tool reads
+// the same spelling and refuses a bad one with the same words.
+func (s *Set) UseSpec(spec string) error {
+	q, name, ok := strings.Cut(spec, "=")
+	if !ok || q == "" || name == "" {
+		return fmt.Errorf("%q is not quantity=unit; give a quantity and its unit, such as distance=mi", spec)
+	}
+	return s.Use(Quantity(strings.TrimSpace(q)), strings.TrimSpace(name))
+}
+
 // Unit is the unit in use for q.
 func (s Set) Unit(q Quantity) Unit {
 	switch q {

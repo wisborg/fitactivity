@@ -102,3 +102,27 @@ func TestFormat(t *testing.T) {
 		}
 	}
 }
+
+// A spec is a quantity and its unit joined by "=", spaces around either
+// allowed; anything else is refused saying what a spec is, and a unit not of
+// its quantity as Use refuses it.
+func TestUseSpec(t *testing.T) {
+	s, _ := Of(Metric)
+	if err := s.UseSpec("distance=nmi"); err != nil || s.Distance != NauticalMile {
+		t.Errorf("distance=nmi: %v, %+v", err, s)
+	}
+	if err := s.UseSpec(" speed = kn "); err != nil || s.Speed != Knot {
+		t.Errorf("spaced speed=kn: %v, %+v", err, s)
+	}
+	for _, c := range []struct{ spec, want string }{
+		{"distance", "is not quantity=unit"},
+		{"=mi", "is not quantity=unit"},
+		{"distance=", "is not quantity=unit"},
+		{"distance=ft", `"ft" is not a unit of distance`},
+		{"height=ft", "is not a quantity with units"},
+	} {
+		if err := s.UseSpec(c.spec); err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("UseSpec(%q): %v, want %q", c.spec, err, c.want)
+		}
+	}
+}
