@@ -1,6 +1,7 @@
 package fitactivity
 
 import (
+	"math"
 	"testing"
 	"time"
 )
@@ -28,8 +29,8 @@ func TestBuildSplits(t *testing.T) {
 	if sp.Empty() {
 		t.Fatal("splits unexpectedly empty")
 	}
-	if sp.TotalKm() != 3 {
-		t.Errorf("TotalKm = %d, want 3", sp.TotalKm())
+	if sp.Last() != 3 {
+		t.Errorf("TotalKm = %d, want 3", sp.Last())
 	}
 	if got := sp.SplitDuration(1); got != 300*time.Second {
 		t.Errorf("split 1 = %v, want 5:00", got)
@@ -43,8 +44,8 @@ func TestBuildSplits(t *testing.T) {
 	if sp.Fastest() != 2 {
 		t.Errorf("Fastest = %d, want 2 (the 200s lap)", sp.Fastest())
 	}
-	if sp.CurrentKm(1500) != 2 {
-		t.Errorf("CurrentKm(1500m) = %d, want 2", sp.CurrentKm(1500))
+	if sp.Current(1500) != 2 {
+		t.Errorf("CurrentKm(1500m) = %d, want 2", sp.Current(1500))
 	}
 	// 50 s into km 2 (which started at t=300s): now = start+350s, distance 1500.
 	if got := sp.CurrentElapsed(1500, base.Add(350*time.Second)); got != 50*time.Second {
@@ -76,10 +77,10 @@ func TestBuildSplits_NoPhantomLapsWhenDistanceStartsPastZero(t *testing.T) {
 	if sp.Empty() {
 		t.Fatal("splits unexpectedly empty: one complete lap exists between 10.2 and 12.4 km")
 	}
-	if got := sp.FirstKm(); got != 12 {
+	if got := sp.First(); got != 12 {
 		t.Errorf("FirstKm = %d, want 12 (km 11's opening crossing at 10 000 m is before the track)", got)
 	}
-	if got := sp.TotalKm(); got != 12 {
+	if got := sp.Last(); got != 12 {
 		t.Errorf("TotalKm = %d, want 12 (absolute km numbers, not a count)", got)
 	}
 	if got := sp.SplitDuration(11); got != 0 {
@@ -109,7 +110,7 @@ func TestBuildSplits_FirstKmIsOneForAWholeActivity(t *testing.T) {
 	sp := BuildSplits(splitsTrack(base, [][2]float64{
 		{0, 0}, {500, 150}, {1000, 300}, {1500, 400}, {2000, 500},
 	}))
-	if got := sp.FirstKm(); got != 1 {
+	if got := sp.First(); got != 1 {
 		t.Errorf("FirstKm = %d, want 1", got)
 	}
 	// The no-complete-lap case is TestBuildSplits_TooShort, which already
@@ -139,10 +140,10 @@ func TestBuildSplits_AFirstRecordInsideKm1KeepsItsOpeningInstant(t *testing.T) {
 	base := time.Date(2026, 7, 5, 0, 0, 0, 0, time.UTC)
 	sp := BuildSplits(splitsTrack(base, [][2]float64{{200, 0}, {1200, 300}, {2200, 600}}))
 
-	if got := sp.FirstKm(); got != 1 {
+	if got := sp.First(); got != 1 {
 		t.Errorf("FirstKm = %d, want 1: a track opening inside km 1 still has a lap 1", got)
 	}
-	if got := sp.TotalKm(); got != 2 {
+	if got := sp.Last(); got != 2 {
 		t.Errorf("TotalKm = %d, want 2", got)
 	}
 	if got := sp.SplitDuration(1); got != 240*time.Second {
@@ -187,8 +188,8 @@ func TestSplits_CurrentElapsedMeasuresFromTheLapItIsActuallyIn(t *testing.T) {
 
 	// Fixture guard: without three complete laps the interior queries below
 	// would sit on a clamped boundary and stop discriminating.
-	if sp.FirstKm() != 12 || sp.TotalKm() != 14 {
-		t.Fatalf("fixture built laps %d..%d, want 12..14", sp.FirstKm(), sp.TotalKm())
+	if sp.First() != 12 || sp.Last() != 14 {
+		t.Fatalf("fixture built laps %d..%d, want 12..14", sp.First(), sp.Last())
 	}
 
 	tests := []struct {
@@ -229,10 +230,10 @@ func TestBuildSplits_OneCrossingIsNoCompleteLap(t *testing.T) {
 	if !sp.Empty() {
 		t.Error("one crossing bounds no complete lap, so Empty must be true")
 	}
-	if got := sp.FirstKm(); got != 0 {
+	if got := sp.First(); got != 0 {
 		t.Errorf("FirstKm = %d, want 0", got)
 	}
-	if got := sp.TotalKm(); got != 0 {
+	if got := sp.Last(); got != 0 {
 		t.Errorf("TotalKm = %d, want 0", got)
 	}
 	if got := sp.Fastest(); got != 0 {
@@ -252,12 +253,66 @@ func TestBuildSplits_TooShort(t *testing.T) {
 		t.Error("a sub-kilometre track must yield Empty splits")
 	}
 	// Queries stay safe.
-	if sp.SplitDuration(1) != 0 || sp.TotalKm() != 0 {
+	if sp.SplitDuration(1) != 0 || sp.Last() != 0 {
 		t.Error("empty splits must return zero values")
 	}
 	// FirstKm's no-lap sentinel. It is 0 rather than 1 because it is what the
 	// HUD clamps its lap window to, and there is no lap 1 here to clamp to.
-	if sp.FirstKm() != 0 {
-		t.Errorf("FirstKm = %d, want 0 when no lap is complete", sp.FirstKm())
+	if sp.First() != 0 {
+		t.Errorf("FirstKm = %d, want 0 when no lap is complete", sp.First())
+	}
+}
+
+// Laps of a mile are a mile long, numbered and timed as kilometre laps are;
+// a length that is no length is a kilometre; and the names from before laps
+// could be other than a kilometre answer as the new ones do.
+func TestBuildSplitsEvery(t *testing.T) {
+	base := time.Date(2026, 7, 5, 0, 0, 0, 0, time.UTC)
+	const mile = 1609.344
+	// 0 -> 3 miles at 8:00, then 7:00, then 7:30 a mile.
+	track := splitsTrack(base, [][2]float64{
+		{0, 0}, {mile, 480}, {2 * mile, 900}, {3 * mile, 1350}, {3.5 * mile, 1600},
+	})
+	sp := BuildSplitsEvery(track, mile)
+	if sp.Length() != mile || sp.First() != 1 || sp.Last() != 3 || sp.Fastest() != 2 {
+		t.Errorf("mile laps: length %v, laps %d..%d, fastest %d", sp.Length(), sp.First(), sp.Last(), sp.Fastest())
+	}
+	if got := sp.SplitDuration(3); got != 450*time.Second {
+		t.Errorf("mile 3 = %v, want 7:30", got)
+	}
+	if sp.Current(3.5*mile) != 4 || sp.Current(1000) != 1 {
+		t.Errorf("Current(3.5 mi) = %d, Current(1 km) = %d; want 4, 1", sp.Current(3.5*mile), sp.Current(1000))
+	}
+	if got := sp.CurrentElapsed(3.5*mile, base.Add(1600*time.Second)); got != 250*time.Second {
+		t.Errorf("CurrentElapsed half way through mile 4 = %v, want 4:10", got)
+	}
+	if sp.TotalKm() != sp.Last() || sp.FirstKm() != sp.First() || sp.CurrentKm(3.5*mile) != sp.Current(3.5*mile) {
+		t.Error("the deprecated names disagree with the new ones")
+	}
+
+	km := BuildSplits(track)
+	if km.Length() != SplitMeters || km.Last() != 5 {
+		t.Errorf("kilometre laps: length %v, last %d; want 1000, 5", km.Length(), km.Last())
+	}
+	for _, none := range []float64{0, -1, math.NaN()} {
+		if sp := BuildSplitsEvery(track, none); sp.Length() != SplitMeters || sp.Last() != 5 {
+			t.Errorf("length %v: laps of %v, last %d; want kilometres", none, sp.Length(), sp.Last())
+		}
+	}
+	if (&Splits{}).Length() != SplitMeters {
+		t.Error("a Splits never built has no lap length")
+	}
+}
+
+// A clip that opens part way through a mile numbers its laps by the
+// activity's miles, as a kilometre clip does by its kilometres.
+func TestBuildSplitsEvery_StartsPastZero(t *testing.T) {
+	base := time.Date(2026, 7, 5, 0, 0, 0, 0, time.UTC)
+	const mile = 1609.344
+	sp := BuildSplitsEvery(splitsTrack(base, [][2]float64{
+		{10.2 * mile, 0}, {11 * mile, 400}, {12 * mile, 880}, {12.4 * mile, 1080},
+	}), mile)
+	if sp.First() != 12 || sp.Last() != 12 || sp.SplitDuration(12) != 480*time.Second {
+		t.Errorf("laps %d..%d, lap 12 %v; want 12..12 at 8:00", sp.First(), sp.Last(), sp.SplitDuration(12))
 	}
 }

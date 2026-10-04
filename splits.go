@@ -2,14 +2,21 @@ package fitactivity
 
 import "time"
 
-// SplitMeters is the lap distance the km-splits gauge reports against.
+// SplitMeters is the lap distance BuildSplits reports against: a kilometre.
 const SplitMeters = 1000.0
 
-// Splits holds the wall-clock time each whole-kilometre boundary was crossed,
-// from which per-km lap durations, the current lap's live elapsed time, and
-// the fastest lap are derived. Built once from a Track (BuildSplits) and
-// queried per frame by the HUD's splits gauge.
+// Splits holds the wall-clock time each whole-lap boundary was crossed, from
+// which per-lap durations, the current lap's live elapsed time, and the
+// fastest lap are derived. Built once from a Track (BuildSplits, or
+// BuildSplitsEvery for a lap other than a kilometre) and queried per frame by
+// the HUD's splits gauge.
+//
+// The comments below say "kilometre" for a lap, because that is the lap
+// almost every split is; with BuildSplitsEvery, read it as one lap of
+// Length, a mile say. The numbering rules are the same for any length.
 type Splits struct {
+	// length is one lap's distance in metres, never 0 once built.
+	length float64
 	// boundary[i] is the (interpolated) instant cumulative distance first
 	// reached (baseKm+i)*SplitMeters, so a completed lap baseKm+i spans
 	// boundary[i-1]..boundary[i]. len-1 is the number of completed laps.
@@ -30,7 +37,19 @@ type Splits struct {
 
 // BuildSplits computes the kilometre boundaries of track by interpolating the
 // sample time at each SplitMeters crossing of cumulative distance.
-func BuildSplits(track *Track) *Splits {
+func BuildSplits(track *Track) *Splits { return BuildSplitsEvery(track, SplitMeters) }
+
+// BuildSplitsEvery is BuildSplits with laps of length metres rather than a
+// kilometre -- a mile, 1609.344, for someone who reads their splits in miles.
+// A length of 0 or less, or one that is not a number, means SplitMeters.
+//
+// It takes a length rather than a unit: which unit a person reads is a
+// presentation choice (see the units package), and splitting is the same
+// arithmetic for any lap.
+func BuildSplitsEvery(track *Track, length float64) *Splits {
+	if !(length > 0) {
+		length = SplitMeters
+	}
 	var dist []float64
 	var times []time.Time
 	for _, s := range track.Samples {
@@ -44,7 +63,7 @@ func BuildSplits(track *Track) *Splits {
 		times = append(times, s.Time)
 	}
 
-	sp := &Splits{}
+	sp := &Splits{length: length}
 	if len(dist) < 2 {
 		return sp
 	}
@@ -59,7 +78,7 @@ func BuildSplits(track *Track) *Splits {
 	// "Strictly past" costs one lap for a track whose first sample sits on an
 	// exact km multiple; representable, vanishingly rare, and the right answer
 	// there is ambiguous, so it is left alone deliberately.
-	firstKm := kmContaining(dist[0])
+	firstKm := sp.lapContaining(dist[0])
 
 	// baseKm is derived here, once, because the whole absolute-km numbering
 	// hangs off it: a second assignment somewhere below would be an invariant
@@ -78,15 +97,15 @@ func BuildSplits(track *Track) *Splits {
 	// len(boundary) >= 2, or (SplitDuration) cannot produce an in-range index
 	// against an empty slice whatever baseKm is.
 	sp.baseKm = firstKm
-	if dist[0] < SplitMeters {
+	if dist[0] < length {
 		sp.baseKm = firstKm - 1 // == 0
 		sp.boundary = append(sp.boundary, times[0])
 	}
 
 	total := dist[len(dist)-1]
 	j := 0
-	for km := firstKm; float64(km)*SplitMeters <= total; km++ {
-		target := float64(km) * SplitMeters
+	for km := firstKm; float64(km)*length <= total; km++ {
+		target := float64(km) * length
 		for j < len(dist) && dist[j] < target {
 			j++
 		}
@@ -118,47 +137,71 @@ func BuildSplits(track *Track) *Splits {
 // Empty reports whether there are no completed laps to show.
 func (s *Splits) Empty() bool { return len(s.boundary) < 2 }
 
-// TotalKm is the LAST completed whole-kilometre lap's number, which for a
+// Length is one lap's distance in metres: SplitMeters from BuildSplits, or
+// the length BuildSplitsEvery was given.
+func (s *Splits) Length() float64 {
+	if s.length > 0 {
+		return s.length
+	}
+	return SplitMeters // a zero Splits{}, never built
+}
+
+// TotalKm is Last, from before laps could be other than a kilometre.
+//
+// Deprecated: use Last.
+func (s *Splits) TotalKm() int { return s.Last() }
+
+// FirstKm is First, from before laps could be other than a kilometre.
+//
+// Deprecated: use First.
+func (s *Splits) FirstKm() int { return s.First() }
+
+// CurrentKm is Current, from before laps could be other than a kilometre.
+//
+// Deprecated: use Current.
+func (s *Splits) CurrentKm(d float64) int { return s.Current(d) }
+
+// Last is the LAST completed whole-kilometre lap's number, which for a
 // track starting at 0 m is also the count of completed laps. 0 when none is
 // complete.
-func (s *Splits) TotalKm() int {
+func (s *Splits) Last() int {
 	if len(s.boundary) < 2 {
 		return 0
 	}
 	return s.baseKm + len(s.boundary) - 1
 }
 
-// FirstKm is the FIRST completed whole-kilometre lap's number, 1 for a track
+// First is the FIRST completed whole-kilometre lap's number, 1 for a track
 // starting at 0 m and 0 when no lap is complete. A lap counts as complete only
 // when both of its bounding crossings are in the data, so a track running
 // 10 200 -> 12 400 m reports 12: the km-11 crossing exists but the km-10 one
 // that would open lap 11 does not.
-func (s *Splits) FirstKm() int {
+func (s *Splits) First() int {
 	if len(s.boundary) < 2 {
 		return 0
 	}
 	return s.baseKm + 1
 }
 
-// kmContaining is THE definition of a kilometre number in this package: the
-// number of the kilometre cumulative distance d falls inside, counting from 1.
-// 0 m and 999 m are both in km 1; 10 200 m is in km 11.
+// lapContaining is THE definition of a lap number in this package: the
+// number of the lap cumulative distance d falls inside, counting from 1.
+// With kilometre laps 0 m and 999 m are both in lap 1; 10 200 m is in lap 11.
 //
-// It has one home because BuildSplits and CurrentKm must agree exactly. The
-// HUD gauge takes its current lap from CurrentKm and compares it against
-// FirstKm, TotalKm and Fastest, all of which are derived from BuildSplits's
+// It has one home because BuildSplitsEvery and Current must agree exactly.
+// The HUD gauge takes its current lap from Current and compares it against
+// First, Last and Fastest, all of which are derived from BuildSplitsEvery's
 // firstKm. If the two rules ever drifted apart, the gauge would ask for laps
 // off the end of the numbering, or skip the one in progress -- visible as
 // wrong rows on a rendered frame, not as a failing test, which is precisely
 // the class of bug the origin-awareness above exists to fix.
-func kmContaining(d float64) int { return int(d/SplitMeters) + 1 }
+func (s *Splits) lapContaining(d float64) int { return int(d/s.Length()) + 1 }
 
-// CurrentKm is the km number in progress at cumulative distance d -- a km
-// number to compare against FirstKm/TotalKm/Fastest, not an index into
-// anything. It is the value the splits gauge builds its whole lap window from.
-func (s *Splits) CurrentKm(d float64) int { return kmContaining(d) }
+// Current is the lap number in progress at cumulative distance d -- a lap
+// number to compare against First/Last/Fastest, not an index into anything.
+// It is the value the splits gauge builds its whole lap window from.
+func (s *Splits) Current(d float64) int { return s.lapContaining(d) }
 
-// SplitDuration is completed lap k's time (k = FirstKm..TotalKm); 0 outside
+// SplitDuration is completed lap k's time (k = First..Last); 0 outside
 // that range, which includes a lap whose opening crossing is before the data.
 func (s *Splits) SplitDuration(k int) time.Duration {
 	i := k - s.baseKm
@@ -168,8 +211,8 @@ func (s *Splits) SplitDuration(k int) time.Duration {
 	return s.boundary[i].Sub(s.boundary[i-1])
 }
 
-// Fastest is the km number of the shortest completed lap (0 if none) -- a lap
-// number to compare against CurrentKm/FirstKm, not an index into anything.
+// Fastest is the number of the shortest completed lap (0 if none) -- a lap
+// number to compare against Current/First, not an index into anything.
 func (s *Splits) Fastest() int { return s.fastest }
 
 // CurrentElapsed is the time spent so far in the current lap at instant now
@@ -183,7 +226,7 @@ func (s *Splits) CurrentElapsed(d float64, now time.Time) time.Duration {
 	if len(s.boundary) == 0 {
 		return 0
 	}
-	idx := s.CurrentKm(d) - 1 - s.baseKm // boundary at the start of the current lap
+	idx := s.Current(d) - 1 - s.baseKm // boundary at the start of the current lap
 	if idx < 0 {
 		idx = 0
 	}

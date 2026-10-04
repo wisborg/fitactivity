@@ -118,8 +118,8 @@ func TestBuildScopedActivity_ScopeActivityReturnsTheSameTrackPointer(t *testing.
 	}
 	// 15 000 m at 10 m/s is 15 complete kilometres, so the splits must be the
 	// activity's own, not some window's.
-	if want := 15; got.Splits.TotalKm() != want {
-		t.Errorf("Splits.TotalKm() = %d, want %d (the whole activity's)", got.Splits.TotalKm(), want)
+	if want := 15; got.Splits.Last() != want {
+		t.Errorf("Splits.Last() = %d, want %d (the whole activity's)", got.Splits.Last(), want)
 	}
 }
 
@@ -308,7 +308,7 @@ func TestBuildScopedActivity_SplitsFollowTheScopedTrack(t *testing.T) {
 
 	t.Run("clip-absolute keeps the activity's km numbers", func(t *testing.T) {
 		got := BuildScopedActivity(scopeTrack(1501, 10), sync, ScopeClipAbsolute)
-		if first, last := got.Splits.FirstKm(), got.Splits.TotalKm(); first != 12 || last != 12 {
+		if first, last := got.Splits.First(), got.Splits.Last(); first != 12 || last != 12 {
 			t.Errorf("splits run km %d..%d, want 12..12", first, last)
 		}
 		if d := got.Splits.SplitDuration(12); d != 100*time.Second {
@@ -321,7 +321,7 @@ func TestBuildScopedActivity_SplitsFollowTheScopedTrack(t *testing.T) {
 
 	t.Run("clip-rebased numbers from the clip's own zero", func(t *testing.T) {
 		got := BuildScopedActivity(scopeTrack(1501, 10), sync, ScopeClipRebased)
-		if first, last := got.Splits.FirstKm(), got.Splits.TotalKm(); first != 1 || last != 2 {
+		if first, last := got.Splits.First(), got.Splits.Last(); first != 1 || last != 2 {
 			t.Errorf("splits run km %d..%d, want 1..2", first, last)
 		}
 		if d := got.Splits.SplitDuration(1); d != 100*time.Second {
@@ -334,7 +334,7 @@ func TestBuildScopedActivity_SplitsFollowTheScopedTrack(t *testing.T) {
 
 	t.Run("the whole activity's splits are unchanged", func(t *testing.T) {
 		got := BuildScopedActivity(scopeTrack(1501, 10), sync, ScopeActivity)
-		if first, last := got.Splits.FirstKm(), got.Splits.TotalKm(); first != 1 || last != 15 {
+		if first, last := got.Splits.First(), got.Splits.Last(); first != 1 || last != 15 {
 			t.Errorf("splits run km %d..%d, want 1..15", first, last)
 		}
 	})
