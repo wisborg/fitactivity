@@ -26,6 +26,10 @@ func TestConversions(t *testing.T) {
 		{MetresPerSecond, 3.5, 3.5},
 		{MinutesPerKilometre, 1000.0 / 300, 300}, // 3.33 m/s is 5:00/km
 		{MinutesPerMile, 1609.344 / 480, 480},    // 8:00/mi
+		{Celsius, 21.5, 21.5},
+		{Fahrenheit, 20, 68},
+		{Fahrenheit, -40, -40},
+		{Fahrenheit, 100, 212},
 	} {
 		if got := c.u.FromSI(c.si); !near(got, c.want) {
 			t.Errorf("%v of SI in %s is %v, want %v", c.si, c.u.Name, got, c.want)
@@ -44,11 +48,11 @@ func TestConversions(t *testing.T) {
 // system there is not, are refused with what there is.
 func TestSets(t *testing.T) {
 	m, err := Of(Metric)
-	if err != nil || m != (Set{Kilometre, Metre, KilometresPerHour, MinutesPerKilometre}) {
+	if err != nil || m != (Set{Kilometre, Metre, KilometresPerHour, MinutesPerKilometre, Celsius}) {
 		t.Errorf("metric: %+v %v", m, err)
 	}
 	i, err := Of(Imperial)
-	if err != nil || i != (Set{Mile, Foot, MilesPerHour, MinutesPerMile}) {
+	if err != nil || i != (Set{Mile, Foot, MilesPerHour, MinutesPerMile, Fahrenheit}) {
 		t.Errorf("imperial: %+v %v", i, err)
 	}
 	flight := i
@@ -61,7 +65,7 @@ func TestSets(t *testing.T) {
 	if metres := i; metres.Use(Elevation, "m") != nil || metres.Elevation != Metre || metres.Distance != Mile {
 		t.Errorf("imperial with its elevation in metres: %+v", metres)
 	}
-	if flight != (Set{NauticalMile, Foot, Knot, MinutesPerMile}) || flight.Unit(Speed) != Knot || flight.Unit(Elevation) != Foot || flight.Unit(Pace) != MinutesPerMile || flight.Unit(Distance) != NauticalMile {
+	if flight != (Set{NauticalMile, Foot, Knot, MinutesPerMile, Fahrenheit}) || flight.Unit(Speed) != Knot || flight.Unit(Elevation) != Foot || flight.Unit(Pace) != MinutesPerMile || flight.Unit(Distance) != NauticalMile {
 		t.Errorf("a flight's units: %+v", flight)
 	}
 	for _, c := range []struct {
@@ -71,7 +75,8 @@ func TestSets(t *testing.T) {
 	}{
 		{Distance, "ft", `"ft" is not a unit of distance; use km, mi, nmi`},
 		{Speed, "kph", "use km/h, mph, kn, m/s"},
-		{"time", "s", "use distance, elevation, speed, pace"},
+		{"time", "s", "use distance, elevation, speed, pace, temperature"},
+		{Temperature, "K", "use C, F"},
 	} {
 		s := m
 		if err := s.Use(c.q, c.name); err == nil || !strings.Contains(err.Error(), c.want) {
@@ -124,5 +129,18 @@ func TestUseSpec(t *testing.T) {
 		if err := s.UseSpec(c.spec); err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("UseSpec(%q): %v, want %q", c.spec, err, c.want)
 		}
+	}
+}
+
+// A temperature is given with its degree sign or without it.
+func TestTemperatureNames(t *testing.T) {
+	s, _ := Of(Imperial)
+	for _, name := range []string{"C", "°C"} {
+		if err := s.Use(Temperature, name); err != nil || s.Temperature != Celsius || s.Unit(Temperature) != Celsius {
+			t.Errorf("%q: %v, %+v", name, err, s.Temperature)
+		}
+	}
+	if err := s.UseSpec("temperature=F"); err != nil || s.Temperature != Fahrenheit {
+		t.Errorf("temperature=F: %v, %+v", err, s.Temperature)
 	}
 }

@@ -1,11 +1,11 @@
 // Package units is the units an activity's numbers are shown in: distance,
-// elevation, speed and pace, each in the units commonly used for it, chosen
+// elevation, speed, pace and temperature, each in the units commonly used for it, chosen
 // by a system -- metric or imperial -- or one by one, for the mixtures some
 // activities read in: a flight has its altitude in feet, its distance in
 // nautical miles and its speed in knots.
 //
 // Everything in this module is in SI -- metres, seconds, metres a second --
-// and stays so. This package only converts at the edge, for a person to
+// and stays so; temperature is in degrees Celsius, as FIT records it. This package only converts at the edge, for a person to
 // read, so that videofx, fitdash and course show one number for one file.
 package units
 
@@ -31,10 +31,12 @@ const (
 	// Pace is how long a distance takes: how fast, the way a runner reads
 	// it.
 	Pace Quantity = "pace"
+	// Temperature is how warm.
+	Temperature Quantity = "temperature"
 )
 
 // Quantities are every Quantity, in the order a listing gives them.
-var Quantities = []Quantity{Distance, Elevation, Speed, Pace}
+var Quantities = []Quantity{Distance, Elevation, Speed, Pace, Temperature}
 
 // Unit is one unit of a Quantity.
 type Unit struct {
@@ -42,36 +44,43 @@ type Unit struct {
 	Name     string
 	Quantity Quantity
 	// si is how much of the SI unit -- metres for distance and elevation,
-	// metres a second for speed, metres for pace's distance -- one of this
-	// unit is.
+	// metres a second for speed, metres for pace's distance, a degree
+	// Celsius for temperature -- one of this unit is.
 	si float64
+	// zero is what the SI unit's zero is in this unit: 32 for Fahrenheit,
+	// whose scale does not start where Celsius's does; 0 for every other.
+	zero float64
 }
 
 // The units there are. Pace units are a time per distance unit; their si is
 // the distance's metres.
 var (
-	Kilometre    = Unit{"km", Distance, 1000}
-	Mile         = Unit{"mi", Distance, 1609.344}
-	NauticalMile = Unit{"nmi", Distance, 1852}
+	Kilometre    = Unit{"km", Distance, 1000, 0}
+	Mile         = Unit{"mi", Distance, 1609.344, 0}
+	NauticalMile = Unit{"nmi", Distance, 1852, 0}
 
-	Metre = Unit{"m", Elevation, 1}
-	Foot  = Unit{"ft", Elevation, 0.3048}
+	Metre = Unit{"m", Elevation, 1, 0}
+	Foot  = Unit{"ft", Elevation, 0.3048, 0}
 
-	KilometresPerHour = Unit{"km/h", Speed, 1000.0 / 3600}
-	MilesPerHour      = Unit{"mph", Speed, 1609.344 / 3600}
-	Knot              = Unit{"kn", Speed, 1852.0 / 3600}
-	MetresPerSecond   = Unit{"m/s", Speed, 1}
+	KilometresPerHour = Unit{"km/h", Speed, 1000.0 / 3600, 0}
+	MilesPerHour      = Unit{"mph", Speed, 1609.344 / 3600, 0}
+	Knot              = Unit{"kn", Speed, 1852.0 / 3600, 0}
+	MetresPerSecond   = Unit{"m/s", Speed, 1, 0}
 
-	MinutesPerKilometre = Unit{"min/km", Pace, 1000}
-	MinutesPerMile      = Unit{"min/mi", Pace, 1609.344}
+	MinutesPerKilometre = Unit{"min/km", Pace, 1000, 0}
+	MinutesPerMile      = Unit{"min/mi", Pace, 1609.344, 0}
+
+	Celsius    = Unit{"°C", Temperature, 1, 0}
+	Fahrenheit = Unit{"°F", Temperature, 5.0 / 9, 32}
 )
 
 // All are every unit, by quantity.
 var All = map[Quantity][]Unit{
-	Distance:  {Kilometre, Mile, NauticalMile},
-	Elevation: {Metre, Foot},
-	Speed:     {KilometresPerHour, MilesPerHour, Knot, MetresPerSecond},
-	Pace:      {MinutesPerKilometre, MinutesPerMile},
+	Distance:    {Kilometre, Mile, NauticalMile},
+	Elevation:   {Metre, Foot},
+	Speed:       {KilometresPerHour, MilesPerHour, Knot, MetresPerSecond},
+	Pace:        {MinutesPerKilometre, MinutesPerMile},
+	Temperature: {Celsius, Fahrenheit},
 }
 
 // FromSI is v, in SI, in u: a distance in metres as kilometres, a speed in
@@ -85,7 +94,7 @@ func (u Unit) FromSI(v float64) float64 {
 		}
 		return u.si / v
 	}
-	return v / u.si
+	return v/u.si + u.zero
 }
 
 // ToSI is FromSI undone: v in u, as metres, or metres a second -- for a pace
@@ -97,7 +106,7 @@ func (u Unit) ToSI(v float64) float64 {
 		}
 		return u.si / v
 	}
-	return v * u.si
+	return (v - u.zero) * u.si
 }
 
 // System is a set of units chosen together.
@@ -113,27 +122,29 @@ var Systems = []System{Metric, Imperial}
 
 // Set is the unit in use for each quantity.
 type Set struct {
-	Distance, Elevation, Speed, Pace Unit
+	Distance, Elevation, Speed, Pace, Temperature Unit
 }
 
 // Of is the units of system s.
 func Of(s System) (Set, error) {
 	switch s {
 	case Metric:
-		return Set{Kilometre, Metre, KilometresPerHour, MinutesPerKilometre}, nil
+		return Set{Kilometre, Metre, KilometresPerHour, MinutesPerKilometre, Celsius}, nil
 	case Imperial:
-		return Set{Mile, Foot, MilesPerHour, MinutesPerMile}, nil
+		return Set{Mile, Foot, MilesPerHour, MinutesPerMile, Fahrenheit}, nil
 	}
 	return Set{}, fmt.Errorf("%q is not a system of units; use %s", s, joinSystems())
 }
 
-// Use makes the unit named name the one in use for quantity q.
+// Use makes the unit named name the one in use for quantity q. A
+// temperature's name may be given without its degree sign, C or F, as a
+// command line is typed.
 func (s *Set) Use(q Quantity, name string) error {
 	units, ok := All[q]
 	if !ok {
 		return fmt.Errorf("%q is not a quantity with units; use %s", q, joinQuantities())
 	}
-	i := slices.IndexFunc(units, func(u Unit) bool { return u.Name == name })
+	i := slices.IndexFunc(units, func(u Unit) bool { return u.Name == name || typed(u) == name })
 	if i < 0 {
 		return fmt.Errorf("%q is not a unit of %s; use %s", name, q, joinUnits(units))
 	}
@@ -146,6 +157,8 @@ func (s *Set) Use(q Quantity, name string) error {
 		s.Speed = units[i]
 	case Pace:
 		s.Pace = units[i]
+	case Temperature:
+		s.Temperature = units[i]
 	}
 	return nil
 }
@@ -170,6 +183,8 @@ func (s Set) Unit(q Quantity) Unit {
 		return s.Elevation
 	case Speed:
 		return s.Speed
+	case Temperature:
+		return s.Temperature
 	}
 	return s.Pace
 }
@@ -216,7 +231,10 @@ func joinQuantities() string {
 func joinUnits(us []Unit) string {
 	var s []string
 	for _, u := range us {
-		s = append(s, u.Name)
+		s = append(s, typed(u))
 	}
 	return strings.Join(s, ", ")
 }
+
+// typed is u's name as it is typed: without a degree sign.
+func typed(u Unit) string { return strings.TrimPrefix(u.Name, "°") }
