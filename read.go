@@ -71,8 +71,9 @@ func (t *Track) Route() *Route {
 	return r
 }
 
-// Read reads the recorded activity at path, telling FIT, GPX, TCX, KML and
-// KMZ apart by what the file holds rather than by its name.
+// Read reads the recorded activity at path, telling FIT, GPX, TCX, KML, KMZ
+// and a Flightradar24 flight's CSV apart by what the file holds rather than
+// by its name.
 //
 // A FIT file is read by Decode. The others carry less: no timer events, no
 // session totals, and -- except TCX -- no recorded distance, so a Track read
@@ -134,6 +135,7 @@ const (
 	formatTCX
 	formatKML
 	formatKMZ
+	formatFR24
 )
 
 // sniff tells the formats apart by content. A FIT file says ".FIT" at byte 8
@@ -146,11 +148,14 @@ func sniff(data []byte) (format, error) {
 	if bytes.HasPrefix(data, []byte("PK\x03\x04")) {
 		return formatKMZ, nil
 	}
+	if bytes.HasPrefix(withoutBOM(data), []byte(fr24Header)) {
+		return formatFR24, nil
+	}
 	dec := xml.NewDecoder(bytes.NewReader(withoutBOM(data)))
 	for {
 		tok, err := dec.Token()
 		if err != nil {
-			return 0, errors.New("not a FIT, GPX, TCX, KML or KMZ file")
+			return 0, errors.New("not a FIT, GPX, TCX, KML or KMZ file, or a Flightradar24 CSV")
 		}
 		if se, ok := tok.(xml.StartElement); ok {
 			switch se.Name.Local {
@@ -204,6 +209,8 @@ func readRecording(f format, data []byte) (*recording, error) {
 		return readKML(data)
 	case formatKMZ:
 		return readKMZ(data)
+	case formatFR24:
+		return readFR24(data)
 	}
 	return nil, fmt.Errorf("no reader for format %d", f)
 }
