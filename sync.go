@@ -19,6 +19,38 @@ import (
 // worth of slack before treating a hole as "real" rather than "jitter".
 const DefaultMaxGap = 3 * time.Second
 
+// GapTolerance is the gap tolerance t's own sampling calls for: twice the
+// spacing that nine in ten of its samples are within of the one before,
+// and never less than DefaultMaxGap.
+//
+// DefaultMaxGap is right for a device recording every second, and wrong for
+// a recording that never meant to: a Flightradar24 flight is a report every
+// half-minute or so at cruise, and under a three-second tolerance nearly
+// every instant of it fell in a "gap", so a reading was absent most of the
+// flight. A gap is a gap against the recording's own rhythm. Taking the
+// rhythm from the ninetieth percentile lets the dense stretches -- a
+// flight's taxi, reported every two seconds -- not set it, and the sparse
+// ones' occasional double interval fit inside twice it, while a hole of
+// minutes, an ocean without coverage, is still a hole. A recording at 1 Hz
+// comes out at DefaultMaxGap exactly, as before.
+func (t *Track) GapTolerance() time.Duration {
+	n := len(t.Samples)
+	if n < 2 {
+		return DefaultMaxGap
+	}
+	spacing := make([]time.Duration, 0, n-1)
+	for i := 1; i < n; i++ {
+		if d := t.Samples[i].Time.Sub(t.Samples[i-1].Time); d > 0 {
+			spacing = append(spacing, d)
+		}
+	}
+	if len(spacing) == 0 {
+		return DefaultMaxGap
+	}
+	sort.Slice(spacing, func(i, j int) bool { return spacing[i] < spacing[j] })
+	return max(DefaultMaxGap, 2*spacing[(len(spacing)-1)*9/10])
+}
+
 // At returns the Track's state interpolated to instant t, using
 // DefaultMaxGap as the gap tolerance. See AtWithGap for the full
 // semantics (exact hits, per-field presence propagation, and gap
