@@ -33,7 +33,12 @@ const DefaultMaxGap = 3 * time.Second
 // ones' occasional double interval fit inside twice it, while a hole of
 // minutes, an ocean without coverage, is still a hole. A recording at 1 Hz
 // comes out at DefaultMaxGap exactly, as before.
+//
+// A Track whose MaxGap is set answers that instead.
 func (t *Track) GapTolerance() time.Duration {
+	if t.MaxGap > 0 {
+		return t.MaxGap
+	}
 	n := len(t.Samples)
 	if n < 2 {
 		return DefaultMaxGap

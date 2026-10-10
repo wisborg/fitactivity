@@ -264,6 +264,16 @@ type Track struct {
 	// each, in order. Empty for anything else.
 	Flights []Flight
 
+	// MaxGap, when above zero, is the gap tolerance GapTolerance answers
+	// in place of the one the sampling calls for: set by a program that
+	// knows better than the rhythm of the fixes how far a reading may be
+	// drawn across a hole. An aircraft out of a tracker's coverage flies
+	// on in a straight line at a steady speed far more nearly than a
+	// runner in a tunnel does, and a flyover would sooner draw it so than
+	// stop it in mid-air until the next report. Zero, as every reader
+	// leaves it, keeps the sampling's.
+	MaxGap time.Duration
+
 	// Samples is sorted ascending by Time; see Decode.
 	Samples []Sample
 

@@ -60,7 +60,7 @@ pays off if you preserve it. A gauge that renders a missing heart rate as
 | `Track.Flights`, `Sample.Course` | a flight tracker's flight — number, callsign, the airports it flew between — and the direction of travel it reports; absent for anything else |
 | `ReadRoute` | any of those → `*Route`, the geometry alone: what a planned route has, and what a map needs |
 | `Track.At` / `AtWithGap` | the track interpolated at an arbitrary instant, with per-field presence carried through and a max-gap that refuses to invent data across a dropout |
-| `Track.GapTolerance` | the max-gap the track's own sampling calls for: a second's recording keeps the default, a flight tracker reporting every half-minute gets twice that |
+| `Track.GapTolerance` | the max-gap the track's own sampling calls for: a second's recording keeps the default, a flight tracker reporting every half-minute gets twice that; `Track.MaxGap`, when set, answers instead — a program drawing a flight across a hole in its tracker's coverage sets it |
 | `Track.FillDistanceFromGPS` | a distance summed along the fixes, asked for by name, for a file that records none — `Read` itself never invents one |
 | `Track.Window` / `Resample` | a stretch of the track, raw or on a fixed step |
 | `BuildElevationModel` | smoothed elevation with its own distance axis, cumulative gain/loss, and grade — tuned to the session's own ascent/descent totals where the file reports them |

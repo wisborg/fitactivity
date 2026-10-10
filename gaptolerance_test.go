@@ -37,4 +37,16 @@ func TestGapTolerance(t *testing.T) {
 	if got := (&Track{}).GapTolerance(); got != DefaultMaxGap {
 		t.Errorf("empty: %v", got)
 	}
+
+	// MaxGap set answers in place of the rhythm, and the hole of 900 s is
+	// drawn across.
+	bridged := at(flight...)
+	bridged.MaxGap = time.Hour
+	if got := bridged.GapTolerance(); got != time.Hour {
+		t.Errorf("MaxGap an hour: %v", got)
+	}
+	last := bridged.Samples[len(bridged.Samples)-1].Time
+	if _, ok := bridged.AtWithGap(last.Add(-450*time.Second), bridged.GapTolerance()); !ok {
+		t.Error("the coverage hole was not bridged under MaxGap")
+	}
 }
