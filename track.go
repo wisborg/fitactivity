@@ -26,6 +26,13 @@ type Sample struct {
 	HasGPS   bool
 	Lat, Lon float64 // degrees
 
+	// HasCourse/Course are the direction of travel over the ground, in
+	// degrees clockwise from true north, 0 to 360, where the file records
+	// it: a Flightradar24 flight's track. Absent for a file that does not;
+	// a consumer wanting one there works it out from the fixes.
+	HasCourse bool
+	Course    float64
+
 	// HasElevation is tracked independently of HasGPS: this comes from
 	// EnhancedAltitude (typically barometric), which can be present
 	// without a GPS fix and absent with one.
@@ -252,6 +259,11 @@ type Track struct {
 	// Sport as "unknown", not assume any particular activity type.
 	Sport string
 
+	// Flights are the flights the track is of, where the file says: a
+	// Flightradar24 export names its flight, and a merge of several keeps
+	// each, in order. Empty for anything else.
+	Flights []Flight
+
 	// Samples is sorted ascending by Time; see Decode.
 	Samples []Sample
 
@@ -311,4 +323,15 @@ func CadenceUnit(sport string) (factor float64, unit string) {
 		return 2, "spm"
 	}
 	return 1, "rpm"
+}
+
+// Flight is what a flight tracker says about a flight: any of it may be
+// empty where the file does not say.
+type Flight struct {
+	// Number is the flight's number as passengers know it, "TG950".
+	Number string
+	// Callsign is the one air traffic control uses, "THA950".
+	Callsign string
+	// From and To are the airports it flew between, by IATA code: "BKK".
+	From, To string
 }

@@ -2,6 +2,7 @@ package fitactivity
 
 import (
 	"fmt"
+	"html"
 	"regexp"
 	"strings"
 )
@@ -9,9 +10,11 @@ import (
 // kmlContainer is a kml root, Document or Folder, any of which holds the
 // others and Placemarks, to any depth.
 type kmlContainer struct {
-	Documents  []kmlContainer `xml:"Document"`
-	Folders    []kmlContainer `xml:"Folder"`
-	Placemarks []kmlPlacemark `xml:"Placemark"`
+	Name        string         `xml:"name"`
+	Description string         `xml:"description"`
+	Documents   []kmlContainer `xml:"Document"`
+	Folders     []kmlContainer `xml:"Folder"`
+	Placemarks  []kmlPlacemark `xml:"Placemark"`
 }
 
 type kmlPlacemark struct {
@@ -85,6 +88,11 @@ func readKML(data []byte) (*recording, error) {
 		return nil, err
 	}
 	rec := &recording{}
+	for _, d := range k.Documents {
+		if f, ok := fr24KMLFlight(d.Name, d.Description); ok {
+			rec.flights = append(rec.flights, f)
+		}
+	}
 	switch {
 	case len(parts.timed) > 0:
 		rec.points = parts.timed
@@ -266,4 +274,37 @@ func kmlPoint(parts []string, sep string, abs bool) (fix, error) {
 		}
 	}
 	return f, nil
+}
+
+// fr24Number and fr24Callsign are a flight number, "TG950", and a callsign,
+// "THA950", as a Flightradar24 KML names its document: "TG950/THA950".
+var (
+	fr24Name = regexp.MustCompile(`^([A-Z0-9]{2}[0-9]{1,4}[A-Z]?)/([A-Z]{3}[0-9A-Z]{1,5})$`)
+	iataCode = regexp.MustCompile(`\b[A-Z]{3}\b`)
+	htmlTag  = regexp.MustCompile(`<[^>]*>`)
+	spaces   = regexp.MustCompile(`\s+`)
+)
+
+// fr24KMLFlight is the flight a Flightradar24 KML document is of, from its name
+// -- "TG950/THA950", the number and the callsign -- and, where its
+// description says, the airports it flew between: the description is the
+// HTML of a pop-up, "BKK Bangkok CPH Copenhagen STD 18:10 UTC ...", read
+// only for the last two codes that come before the scheduled time. A document
+// whose name is not a flight's is not one, whatever its description.
+func fr24KMLFlight(name, description string) (Flight, bool) {
+	m := fr24Name.FindStringSubmatch(strings.TrimSpace(name))
+	if m == nil {
+		return Flight{}, false
+	}
+	f := Flight{Number: m[1], Callsign: m[2]}
+	text := spaces.ReplaceAllString(html.UnescapeString(htmlTag.ReplaceAllString(description, " ")), " ")
+	// The last two codes before the scheduled time: the description also
+	// credits the aircraft's photographer, whose name may be a code too --
+	// "© NRT Spotter" -- and comes first.
+	if before, _, ok := strings.Cut(text, " STD "); ok {
+		if codes := iataCode.FindAllString(before, -1); len(codes) >= 2 {
+			f.From, f.To = codes[len(codes)-2], codes[len(codes)-1]
+		}
+	}
+	return f, true
 }

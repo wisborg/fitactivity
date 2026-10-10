@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -26,12 +27,15 @@ const (
 // the aircraft's transponder made, with its time, position, altitude in
 // feet, ground speed in knots and track in degrees.
 //
-// Altitude becomes Elevation and ground speed becomes Speed, in metres and
-// metres a second. The same flight's KML export carries the altitude too, as
+// Altitude becomes Elevation, ground speed Speed and track Course, in
+// metres, metres a second and degrees, and the callsign the Track's
+// Flight. The same flight's KML export carries the altitude too, as
 // a coordinate's third value, but its speed only inside the HTML of a
 // placemark's description -- for a pop-up in Google Earth -- which is why
-// this file is read and the description is not. The track has no Sample
-// field and is left out; the callsign names the flight, not a sample.
+// this file is read and the description is not. The callsign names the
+// flight -- THA950, the airline's ICAO code -- and the CSV has neither the
+// flight number passengers know nor the airports; the same flight's KML
+// does.
 //
 // Speed is over the ground, which is what the other formats' speed is too:
 // an aircraft's airspeed is a different number, and this is not it.
@@ -60,6 +64,9 @@ func readFR24(data []byte) (*recording, error) {
 			return nil, fmt.Errorf("decoding Flightradar24 CSV line %d: %w", line, err)
 		}
 		rec.points = append(rec.points, f)
+		if cs := strings.TrimSpace(row[2]); cs != "" && len(rec.flights) == 0 {
+			rec.flights = []Flight{{Callsign: cs}}
+		}
 	}
 	return rec, nil
 }
@@ -102,6 +109,13 @@ func fr24Fix(row []string) (fix, error) {
 			return f, fmt.Errorf("speed %q: %w", spd, err)
 		}
 		f.Speed, f.HasSpeed = kt*knots, true
+	}
+	if dir := strings.TrimSpace(row[6]); dir != "" {
+		deg, err := strconv.ParseFloat(dir, 64)
+		if err != nil || deg < 0 || deg > 360 {
+			return f, fmt.Errorf("direction %q is not degrees from 0 to 360", dir)
+		}
+		f.Course, f.HasCourse = math.Mod(deg, 360), true
 	}
 	return f, nil
 }

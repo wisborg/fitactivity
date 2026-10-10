@@ -190,6 +190,8 @@ type recording struct {
 	// route, a TCX course. They are the pace somebody meant to go at, and
 	// are not read as a recording.
 	planned bool
+	// flights are the flights the file says it is of; see Track.Flights.
+	flights []Flight
 }
 
 // fix is one point of a recording. Its Sample's Time is meaningful only when
@@ -254,6 +256,7 @@ func (r *recording) track(path string) (*Track, error) {
 		SourcePath: path,
 		Sources:    []string{path},
 		Sport:      r.sport,
+		Flights:    r.flights,
 		Samples:    samples,
 		Timing:     r.timing,
 	}, nil

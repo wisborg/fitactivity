@@ -57,6 +57,7 @@ pays off if you preserve it. A gauge that renders a missing heart rate as
 |---|---|
 | `Decode` | FIT file → `*Track`: sorted `Sample`s, sport, session totals, timer events |
 | `Read` | FIT, GPX, TCX, KML, KMZ or a Flightradar24 CSV → `*Track`, told apart by content; a file without a time on every point is refused with `ErrNoTimes` rather than given invented ones |
+| `Track.Flights`, `Sample.Course` | a flight tracker's flight — number, callsign, the airports it flew between — and the direction of travel it reports; absent for anything else |
 | `ReadRoute` | any of those → `*Route`, the geometry alone: what a planned route has, and what a map needs |
 | `Track.At` / `AtWithGap` | the track interpolated at an arbitrary instant, with per-field presence carried through and a max-gap that refuses to invent data across a dropout |
 | `Track.GapTolerance` | the max-gap the track's own sampling calls for: a second's recording keeps the default, a flight tracker reporting every half-minute gets twice that |

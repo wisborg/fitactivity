@@ -171,6 +171,13 @@ func interpolateSample(lo, hi Sample, at time.Time, frac float64) Sample {
 		s.HasCadence = true
 		s.Cadence = uint8(math.Round(lerp(float64(lo.Cadence), float64(hi.Cadence), frac)))
 	}
+	if lo.HasCourse && hi.HasCourse {
+		// The short way round: from 359 to 1 through 0, not back through
+		// 180.
+		d := math.Mod(hi.Course-lo.Course+540, 360) - 180
+		s.HasCourse = true
+		s.Course = math.Mod(lo.Course+d*frac+360, 360)
+	}
 	if lo.HasTemperature && hi.HasTemperature {
 		s.HasTemperature = true
 		s.Temperature = int8(math.Round(lerp(float64(lo.Temperature), float64(hi.Temperature), frac)))

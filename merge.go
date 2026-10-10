@@ -177,6 +177,7 @@ func Merge(tracks ...*Track) (*Track, error) {
 			merged.Sport = t.Sport
 		}
 		merged.Sources = append(merged.Sources, t.Sources...)
+		merged.Flights = append(merged.Flights, t.Flights...)
 	}
 
 	// Samples are NOT re-sorted. Each track arrives sorted from Decode, and
