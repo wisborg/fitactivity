@@ -56,7 +56,7 @@ func TestSets(t *testing.T) {
 		t.Errorf("imperial: %+v %v", i, err)
 	}
 	flight := i
-	if err := flight.Use(Distance, "nmi"); err != nil {
+	if err := flight.Use(Distance, "nm"); err != nil {
 		t.Fatal(err)
 	}
 	if err := flight.Use(Speed, "kn"); err != nil {
@@ -73,7 +73,7 @@ func TestSets(t *testing.T) {
 		name string
 		want string
 	}{
-		{Distance, "ft", `"ft" is not a unit of distance; use km, mi, nmi`},
+		{Distance, "ft", `"ft" is not a unit of distance; use km, mi, nm`},
 		{Speed, "kph", "use km/h, mph, kn, m/s"},
 		{"time", "s", "use distance, elevation, speed, pace, temperature"},
 		{Temperature, "K", "use C, F"},
@@ -113,8 +113,16 @@ func TestFormat(t *testing.T) {
 // its quantity as Use refuses it.
 func TestUseSpec(t *testing.T) {
 	s, _ := Of(Metric)
-	if err := s.UseSpec("distance=nmi"); err != nil || s.Distance != NauticalMile {
+	if err := s.UseSpec("distance=nm"); err != nil || s.Distance != NauticalMile {
+		t.Errorf("distance=nm: %v, %+v", err, s)
+	}
+	// The spelling from before the unit was written "nm" still reads.
+	s, _ = Of(Metric)
+	if err := s.UseSpec("distance=nmi"); err != nil || s.Distance != NauticalMile || s.Distance.Name != "nm" {
 		t.Errorf("distance=nmi: %v, %+v", err, s)
+	}
+	if err := s.UseSpec("speed=nmi"); err == nil {
+		t.Error("nmi taken as a speed")
 	}
 	if err := s.UseSpec(" speed = kn "); err != nil || s.Speed != Knot {
 		t.Errorf("spaced speed=kn: %v, %+v", err, s)

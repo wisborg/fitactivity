@@ -57,7 +57,7 @@ type Unit struct {
 var (
 	Kilometre    = Unit{"km", Distance, 1000, 0}
 	Mile         = Unit{"mi", Distance, 1609.344, 0}
-	NauticalMile = Unit{"nmi", Distance, 1852, 0}
+	NauticalMile = Unit{"nm", Distance, 1852, 0}
 
 	Metre = Unit{"m", Elevation, 1, 0}
 	Foot  = Unit{"ft", Elevation, 0.3048, 0}
@@ -143,6 +143,9 @@ func (s *Set) Use(q Quantity, name string) error {
 	units, ok := All[q]
 	if !ok {
 		return fmt.Errorf("%q is not a quantity with units; use %s", q, joinQuantities())
+	}
+	if alias, ok := aliases[name]; ok && alias.Quantity == q {
+		name = alias.Name
 	}
 	i := slices.IndexFunc(units, func(u Unit) bool { return u.Name == name || typed(u) == name })
 	if i < 0 {
@@ -235,6 +238,12 @@ func joinUnits(us []Unit) string {
 	}
 	return strings.Join(s, ", ")
 }
+
+// aliases are other spellings a unit is given by that it is not written as:
+// "nmi", the nautical mile's symbol in some standards, which a command line
+// or a saved map style may still say from before the unit was written "nm",
+// as pilots and charts write it.
+var aliases = map[string]Unit{"nmi": NauticalMile}
 
 // typed is u's name as it is typed: without a degree sign.
 func typed(u Unit) string { return strings.TrimPrefix(u.Name, "°") }
