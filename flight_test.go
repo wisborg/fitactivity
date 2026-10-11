@@ -64,3 +64,43 @@ func TestMergeKeepsFlights(t *testing.T) {
 		t.Errorf("merged flights %+v", m.Flights)
 	}
 }
+
+// A Flightradar24 KML's speed and track are in each point's pop-up, and
+// are read from there: the KML alone is the whole flight. A description
+// that is not one -- Garmin Connect's laps, in km/h -- gives nothing, and a
+// point whose pop-up has no speed has none.
+func TestReadKMLFlightSpeedAndTrack(t *testing.T) {
+	popup := func(alt, speed, heading string) string {
+		return `<description><![CDATA[<div><div><span><b>Altitude:</b></span> <span>` + alt + ` ft</span></div>
+<div><span><b>Speed:</b></span> <span>` + speed + ` kt</span></div>
+<div><span><b>Heading:</b></span> <span>` + heading + `&deg;</span></div>
+</div>]]></description>`
+	}
+	kml := `<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2"><Document>
+<name>XY123/XYZ123</name>
+<Placemark>` + popup("0", "0", "14") + `<TimeStamp><when>2026-01-01T00:00:00Z</when></TimeStamp><Point><altitudeMode>absolute</altitudeMode><coordinates>10,20,0</coordinates></Point></Placemark>
+<Placemark>` + popup("36,000", "1,048", "360") + `<TimeStamp><when>2026-01-01T00:01:00Z</when></TimeStamp><Point><altitudeMode>absolute</altitudeMode><coordinates>10.1,20,10972.8</coordinates></Point></Placemark>
+<Placemark><description>&lt;table&gt;&lt;tr&gt;&lt;td&gt;Max Speed:&lt;/td&gt;&lt;td&gt;12.34 Kilometers per hour&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;</description><TimeStamp><when>2026-01-01T00:02:00Z</when></TimeStamp><Point><coordinates>10.2,20,0</coordinates></Point></Placemark>
+</Document></kml>`
+	tr := readTrack(t, writeCourse(t, "flight.kml", kml))
+	if tr.Sport != "flying" {
+		t.Errorf("sport %q, want flying", tr.Sport)
+	}
+	if len(tr.Samples) != 3 {
+		t.Fatalf("%d samples, want 3", len(tr.Samples))
+	}
+	s0, s1, s2 := tr.Samples[0], tr.Samples[1], tr.Samples[2]
+	if !s0.HasSpeed || s0.Speed != 0 || !s0.HasCourse || s0.Course != 14 {
+		t.Errorf("at the gate: speed %v (has %v), course %v (has %v); want 0 and 14", s0.Speed, s0.HasSpeed, s0.Course, s0.HasCourse)
+	}
+	if !s1.HasSpeed || math.Abs(s1.Speed-1048*knots) > 1e-9 || !s1.HasCourse || s1.Course != 0 {
+		t.Errorf("at cruise: speed %v (has %v), course %v (has %v); want %v and 0", s1.Speed, s1.HasSpeed, s1.Course, s1.HasCourse, 1048*knots)
+	}
+	if !s1.HasElevation || math.Abs(s1.Elevation-10972.8) > 1e-9 {
+		t.Errorf("altitude %v (has %v), want 10972.8 from the coordinate", s1.Elevation, s1.HasElevation)
+	}
+	if s2.HasSpeed || s2.HasCourse {
+		t.Errorf("a description in km/h read as speed %v (has %v), course %v (has %v)", s2.Speed, s2.HasSpeed, s2.Course, s2.HasCourse)
+	}
+}

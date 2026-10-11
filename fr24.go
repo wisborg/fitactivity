@@ -29,13 +29,10 @@ const (
 //
 // Altitude becomes Elevation, ground speed Speed and track Course, in
 // metres, metres a second and degrees, and the callsign the Track's
-// Flight. The same flight's KML export carries the altitude too, as
-// a coordinate's third value, but its speed only inside the HTML of a
-// placemark's description -- for a pop-up in Google Earth -- which is why
-// this file is read and the description is not. The callsign names the
-// flight -- THA950, the airline's ICAO code -- and the CSV has neither the
-// flight number passengers know nor the airports; the same flight's KML
-// does.
+// Flight. The same flight's KML export carries all of it too, and more: the
+// callsign names the flight -- THA950, the airline's ICAO code -- and the
+// CSV has neither the flight number passengers know nor the airports,
+// which the KML does. See fr24Readings.
 //
 // Speed is over the ground, which is what the other formats' speed is too:
 // an aircraft's airspeed is a different number, and this is not it.

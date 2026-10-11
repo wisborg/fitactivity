@@ -3,7 +3,9 @@ package fitactivity
 import (
 	"fmt"
 	"html"
+	"math"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -18,7 +20,8 @@ type kmlContainer struct {
 }
 
 type kmlPlacemark struct {
-	TimeStamp *struct {
+	Description string `xml:"description"`
+	TimeStamp   *struct {
 		When string `xml:"when"`
 	} `xml:"TimeStamp"`
 	TimeSpan *struct {
@@ -93,6 +96,10 @@ func readKML(data []byte) (*recording, error) {
 			rec.flights = append(rec.flights, f)
 		}
 	}
+	// A flight tracker's file is a flight's, as its CSV is.
+	if len(rec.flights) > 0 {
+		rec.sport = sportName("flying")
+	}
 	switch {
 	case len(parts.timed) > 0:
 		rec.points = parts.timed
@@ -147,7 +154,65 @@ func (p *kmlParts) placemark(pm kmlPlacemark) error {
 	case pm.TimeSpan != nil && strings.TrimSpace(pm.TimeSpan.Begin) != "":
 		when = pm.TimeSpan.Begin
 	}
-	return p.geometry(pm.kmlGeometry, when)
+	n := len(p.timed)
+	if err := p.geometry(pm.kmlGeometry, when); err != nil {
+		return err
+	}
+	if added := p.timed[n:]; len(added) > 0 {
+		fr24Readings(pm.Description, added)
+	}
+	return nil
+}
+
+// fr24Speed and fr24Heading are a Flightradar24 placemark's ground speed and
+// track, as the HTML of its pop-up writes them once the tags are gone:
+// "Speed: 448 kt", "Heading: 229°".
+var (
+	fr24Speed   = regexp.MustCompile(`\bSpeed: ([0-9][0-9,]*(?:\.[0-9]+)?) kt\b`)
+	fr24Heading = regexp.MustCompile(`\bHeading: ([0-9]+(?:\.[0-9]+)?)°`)
+)
+
+// fr24Readings gives fixes the ground speed and track a Flightradar24
+// placemark's description reports, where it reports them. A Flightradar24
+// KML carries everything its CSV export does -- the same reports, the same
+// positions, altitudes, speeds and tracks -- but the speed and track only
+// inside the HTML of each timed point's pop-up, for Google Earth. They are
+// the aircraft's own, broadcast with its position, not worked out from the
+// positions: from one report to the next they change by a knot or two at
+// cruise, where a speed taken between the reported positions jumps by
+// tens. So they are read, and the KML alone is the whole flight.
+//
+// Anything else's description is prose, and a field it does not have is
+// absent, not zero.
+func fr24Readings(description string, fixes []fix) {
+	if !strings.Contains(description, "Speed:") && !strings.Contains(description, "Heading:") {
+		return
+	}
+	// Unescaped first: Flightradar24 writes its HTML in CDATA, Garmin
+	// Connect escaped, and either way the tags are to go.
+	text := spaces.ReplaceAllString(htmlTag.ReplaceAllString(html.UnescapeString(description), " "), " ")
+	speed, hasSpeed := fr24Field(fr24Speed, text)
+	heading, hasHeading := fr24Field(fr24Heading, text)
+	hasHeading = hasHeading && heading >= 0 && heading <= 360
+	for i := range fixes {
+		if hasSpeed {
+			fixes[i].Speed, fixes[i].HasSpeed = speed*knots, true
+		}
+		if hasHeading {
+			fixes[i].Course, fixes[i].HasCourse = math.Mod(heading, 360), true
+		}
+	}
+}
+
+// fr24Field is the number re finds in text, its thousands separators
+// dropped.
+func fr24Field(re *regexp.Regexp, text string) (float64, bool) {
+	m := re.FindStringSubmatch(text)
+	if m == nil {
+		return 0, false
+	}
+	v, err := strconv.ParseFloat(strings.ReplaceAll(m[1], ",", ""), 64)
+	return v, err == nil
 }
 
 func (p *kmlParts) geometry(g kmlGeometry, when string) error {
