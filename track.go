@@ -344,4 +344,9 @@ type Flight struct {
 	Callsign string
 	// From and To are the airports it flew between, by IATA code: "BKK".
 	From, To string
+	// Aircraft is the aircraft's model, "Boeing 777-3D7(ER)", and
+	// AircraftType its ICAO type designator, "B77W".
+	Aircraft, AircraftType string
+	// Registration is the aircraft's own registration, "HS-TKX".
+	Registration string
 }

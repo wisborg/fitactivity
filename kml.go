@@ -346,16 +346,23 @@ func kmlPoint(parts []string, sep string, abs bool) (fix, error) {
 var (
 	fr24Name = regexp.MustCompile(`^([A-Z0-9]{2}[0-9]{1,4}[A-Z]?)/([A-Z]{3}[0-9A-Z]{1,5})$`)
 	iataCode = regexp.MustCompile(`\b[A-Z]{3}\b`)
-	htmlTag  = regexp.MustCompile(`<[^>]*>`)
-	spaces   = regexp.MustCompile(`\s+`)
+	// fr24Aircraft is the aircraft as the pop-up's text has it: "Aircraft
+	// (B77W) Boeing 777-3D7(ER)", running to the registration's caption
+	// or the end, the type in brackets where it is known.
+	fr24Aircraft = regexp.MustCompile(`\bAircraft (?:\(([A-Z0-9]{2,4})\) )?(.*?)(?: Registration\b|$)`)
+	fr24Reg      = regexp.MustCompile(`\bRegistration ([A-Z0-9][A-Z0-9-]{1,9})\b`)
+	htmlTag      = regexp.MustCompile(`<[^>]*>`)
+	spaces       = regexp.MustCompile(`\s+`)
 )
 
 // fr24KMLFlight is the flight a Flightradar24 KML document is of, from its name
 // -- "TG950/THA950", the number and the callsign -- and, where its
 // description says, the airports it flew between: the description is the
 // HTML of a pop-up, "BKK Bangkok CPH Copenhagen STD 18:10 UTC ...", read
-// only for the last two codes that come before the scheduled time. A document
-// whose name is not a flight's is not one, whatever its description.
+// only for the last two codes that come before the scheduled time -- and
+// the aircraft that flew it, "... Aircraft (B77W) Boeing 777-3D7(ER)
+// Registration HS-TKX", where those are known. A document whose name is
+// not a flight's is not one, whatever its description.
 func fr24KMLFlight(name, description string) (Flight, bool) {
 	m := fr24Name.FindStringSubmatch(strings.TrimSpace(name))
 	if m == nil {
@@ -371,5 +378,22 @@ func fr24KMLFlight(name, description string) (Flight, bool) {
 			f.From, f.To = codes[len(codes)-2], codes[len(codes)-1]
 		}
 	}
+	if m := fr24Aircraft.FindStringSubmatch(text); m != nil {
+		f.AircraftType, f.Aircraft = m[1], known(m[2])
+	}
+	if m := fr24Reg.FindStringSubmatch(text); m != nil {
+		f.Registration = known(m[1])
+	}
 	return f, true
+}
+
+// known is a pop-up's field, or empty where Flightradar24 writes that it
+// does not know: "N/A", or a dash.
+func known(s string) string {
+	s = strings.TrimSpace(s)
+	switch strings.ToUpper(s) {
+	case "N/A", "-", "UNKNOWN":
+		return ""
+	}
+	return s
 }

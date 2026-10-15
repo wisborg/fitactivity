@@ -19,22 +19,48 @@ func TestReadFR24CourseAndCallsign(t *testing.T) {
 }
 
 // A Flightradar24 KML names its flight in its document; its description has
-// the airports, after a photographer's credit that may look like one.
+// the airports, after a photographer's credit that may look like one, and
+// the aircraft that flew it.
 func TestReadKMLFlight(t *testing.T) {
 	kml := `<?xml version="1.0" encoding="UTF-8"?>
 <kml xmlns="http://www.opengis.net/kml/2.2"><Document>
 <name>XY123/XYZ123</name>
-<description><![CDATA[<div><span>XY123 / XYZ123</span> Example Air &copy; ABC Spotter <b>AAA</b> Alphaville <b>BBB</b> Betatown <span>STD</span> 04:35 UTC</div>]]></description>
+<description><![CDATA[<div><span>XY123 / XYZ123</span> Example Air &copy; ABC Spotter <b>AAA</b> Alphaville <b>BBB</b> Betatown <span>STD</span> 04:35 UTC
+<td>Aircraft<span>(A20N)</span><br>
+<span>Example 320-271N</span></td><td>Registration<br>
+<span><a href="#">XX-ABC</a></span></td></div>]]></description>
 <Placemark><TimeStamp><when>2026-01-01T00:00:00Z</when></TimeStamp><Point><coordinates>10,20,0</coordinates></Point></Placemark>
 <Placemark><TimeStamp><when>2026-01-01T00:01:00Z</when></TimeStamp><Point><coordinates>10.1,20,100</coordinates></Point></Placemark>
 </Document></kml>`
 	tr := readTrack(t, writeCourse(t, "flight.kml", kml))
-	want := Flight{Number: "XY123", Callsign: "XYZ123", From: "AAA", To: "BBB"}
+	want := Flight{Number: "XY123", Callsign: "XYZ123", From: "AAA", To: "BBB",
+		Aircraft: "Example 320-271N", AircraftType: "A20N", Registration: "XX-ABC"}
 	if len(tr.Flights) != 1 || tr.Flights[0] != want {
 		t.Errorf("flights %+v, want %+v", tr.Flights, want)
 	}
 	if f, ok := fr24KMLFlight("Morning run", "AAA BBB STD"); ok {
 		t.Errorf("a document not named as a flight read as %+v", f)
+	}
+}
+
+// An aircraft Flightradar24 does not know is no aircraft, and one whose
+// type alone it does not know is still its model; a pop-up without the
+// aircraft's fields has none of them.
+func TestKMLFlightAircraftWhereKnown(t *testing.T) {
+	for _, c := range []struct {
+		description string
+		want        Flight
+	}{
+		{"AAA BBB STD Aircraft N/A Registration N/A", Flight{From: "AAA", To: "BBB"}},
+		{"AAA BBB STD Aircraft Example 320 Registration XX-ABC", Flight{From: "AAA", To: "BBB", Aircraft: "Example 320", Registration: "XX-ABC"}},
+		{"AAA BBB STD Aircraft (A20N) Example 320", Flight{From: "AAA", To: "BBB", Aircraft: "Example 320", AircraftType: "A20N"}},
+		{"AAA BBB STD 04:35 UTC", Flight{From: "AAA", To: "BBB"}},
+	} {
+		f, ok := fr24KMLFlight("XY123/XYZ123", c.description)
+		c.want.Number, c.want.Callsign = "XY123", "XYZ123"
+		if !ok || f != c.want {
+			t.Errorf("%q read as %+v, want %+v", c.description, f, c.want)
+		}
 	}
 }
 
