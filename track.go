@@ -69,6 +69,22 @@ type Sample struct {
 	HasPower bool
 	Power    uint16 // watts
 
+	// HasCalories/Calories is the energy the activity has used so far, as
+	// the device estimates it: a running total from the start, not a rate,
+	// so it rises through the activity and its last value is the whole
+	// activity's. FIT's Record.calories, and iFit's per-trackpoint
+	// Calories in a TCX file.
+	HasCalories bool
+	Calories    float64 // kcal, since the start
+
+	// HasResistance/Resistance is the resistance an exercise machine --
+	// a bike, a rower, an elliptical -- was set to, on the machine's own
+	// scale: FIT's is 0 for none to 254 for most, iFit's the level its
+	// console shows. Two machines' numbers are not comparable, and this
+	// package does not pretend to convert one to the other.
+	HasResistance bool
+	Resistance    float64
+
 	// Running dynamics reported through FIT's own standard Record
 	// fields (as opposed to developer fields — see DevFields). Whether
 	// a given sensor reports these here or as developer fields is a

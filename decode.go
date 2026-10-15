@@ -217,6 +217,14 @@ func sampleFromRecord(rec *mesgdef.Record, devFields devFieldIndex) Sample {
 		s.HasPower = true
 		s.Power = rec.Power
 	}
+	if rec.Calories != basetype.Uint16Invalid {
+		s.HasCalories = true
+		s.Calories = float64(rec.Calories)
+	}
+	if rec.Resistance != basetype.Uint8Invalid {
+		s.HasResistance = true
+		s.Resistance = float64(rec.Resistance)
+	}
 	if vo := rec.VerticalOscillationScaled(); !invalidFloat(vo) {
 		s.HasVerticalOscillation = true
 		s.VerticalOscillation = vo

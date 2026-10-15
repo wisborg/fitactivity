@@ -392,3 +392,32 @@ func TestReadTCXPrefersItsOwnHeartRate(t *testing.T) {
 		t.Errorf("heart rate %v %d; want the trackpoint's 130", s.HasHeartRate, s.HeartRate)
 	}
 }
+
+// An iFit TCX: no positions, and the machine's power, calories and
+// resistance written as elements of the trackpoint's own beside the
+// schema's. A heart rate of 0, written before the strap connects, is no
+// heart rate; a power and a cadence of 0 are a rider who stopped. A
+// trackpoint element of a name not read, whatever its text, is passed
+// over.
+const tcxIFit = `<?xml version="1.0"?><TrainingCenterDatabase xmlns="http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><Activities><Activity Sport="Other"><Id>2026-04-02T06:00:00Z</Id><Lap StartTime="2026-04-02T06:00:00Z"><Track>
+<Trackpoint><DistanceMeters>0</DistanceMeters><Cadence>0</Cadence><Calories>0</Calories><HeartRateBpm xsi:type="HeartRateInBeatsPerMinute_t"><Value>0</Value></HeartRateBpm><Watts>0</Watts><Resistance>0</Resistance><Time>2026-04-02T06:00:00Z</Time></Trackpoint>
+<Trackpoint><DistanceMeters>10</DistanceMeters><Cadence>86</Cadence><Calories>0.39</Calories><HeartRateBpm xsi:type="HeartRateInBeatsPerMinute_t"><Value>121</Value></HeartRateBpm><Watts>167</Watts><Resistance>16</Resistance><SensorState>Present</SensorState><Time>2026-04-02T06:00:01Z</Time></Trackpoint>
+</Track></Lap></Activity></Activities></TrainingCenterDatabase>`
+
+func TestReadTCXFromIFit(t *testing.T) {
+	tr := readTrack(t, writeCourse(t, "machine.tcx", tcxIFit))
+	if len(tr.Samples) != 2 {
+		t.Fatalf("%d samples, want 2", len(tr.Samples))
+	}
+	s0, s1 := tr.Samples[0], tr.Samples[1]
+	if s0.HasHeartRate {
+		t.Errorf("a heart rate of 0 read as %d bpm", s0.HeartRate)
+	}
+	if !s0.HasPower || s0.Power != 0 || !s0.HasCadence || s0.Cadence != 0 || !s0.HasCalories || !s0.HasResistance {
+		t.Errorf("the first point's zeros are not read as readings: %+v", s0)
+	}
+	if !s1.HasHeartRate || s1.HeartRate != 121 || !s1.HasPower || s1.Power != 167 || s1.Cadence != 86 ||
+		!s1.HasCalories || s1.Calories != 0.39 || !s1.HasResistance || s1.Resistance != 16 {
+		t.Errorf("the second point reads as %+v", s1)
+	}
+}

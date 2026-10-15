@@ -191,6 +191,14 @@ func interpolateSample(lo, hi Sample, at time.Time, frac float64) Sample {
 		s.HasPower = true
 		s.Power = uint16(math.Round(lerp(float64(lo.Power), float64(hi.Power), frac)))
 	}
+	if lo.HasCalories && hi.HasCalories {
+		s.HasCalories = true
+		s.Calories = lerp(lo.Calories, hi.Calories, frac)
+	}
+	if lo.HasResistance && hi.HasResistance {
+		s.HasResistance = true
+		s.Resistance = lerp(lo.Resistance, hi.Resistance, frac)
+	}
 	if lo.HasVerticalOscillation && hi.HasVerticalOscillation {
 		s.HasVerticalOscillation = true
 		s.VerticalOscillation = lerp(lo.VerticalOscillation, hi.VerticalOscillation, frac)

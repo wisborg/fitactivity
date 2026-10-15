@@ -147,6 +147,17 @@ type Options struct {
 	// false on every sample, which a written zero would not do.
 	StanceTimeBalancePercent float64
 
+	// CaloriesPerSecond, when non-zero, writes the standard FIT
+	// Record.calories field on every record: the running total since the
+	// first record, at this many kcal a second, rounded down to the whole
+	// kilocalorie the field holds. 0, the default, writes no field at all,
+	// for the reason PowerWatts gives.
+	CaloriesPerSecond float64
+
+	// Resistance, when non-zero, writes the standard FIT Record.resistance
+	// field on every record at this level. 0, the default, writes none.
+	Resistance uint8
+
 	// DeveloperFields registers and writes zero or more developer fields in
 	// ADDITION to the single legacy DeveloperField above, each under its own
 	// FieldDescription but sharing DeveloperField's DeveloperDataId
@@ -377,6 +388,13 @@ func Build(opts Options) ([]byte, error) {
 			// Record.Power at FIT's invalid sentinel and Decode's HasPower
 			// false -- see PowerWatts' doc comment.
 			rec.SetPower(opts.PowerWatts)
+		}
+
+		if opts.CaloriesPerSecond != 0 {
+			rec.SetCalories(uint16(opts.CaloriesPerSecond * t))
+		}
+		if opts.Resistance != 0 {
+			rec.SetResistance(opts.Resistance)
 		}
 
 		if opts.StanceTimeBalancePercent != 0 {

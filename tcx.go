@@ -32,12 +32,19 @@ type tcxPoint struct {
 	} `xml:"HeartRateBpm"`
 	Cadence    *string `xml:"Cadence"`
 	Extensions *xmlAny `xml:"Extensions"`
+	// Other are the trackpoint's elements the schema does not name. iFit
+	// writes its machines' Watts, Calories and Resistance there, beside
+	// the schema's own, rather than in an extension block; they are read
+	// as an extension block's are.
+	Other []xmlAny `xml:",any"`
 }
 
 // readTCX reads a Training Center file's activities: every trackpoint of
 // every track of every lap, which carry a time by the schema's rule, and a
 // distance as FIT does. Speed, run cadence and power come from Garmin's
-// ActivityExtension.
+// ActivityExtension, or from elements of the trackpoint's own that the
+// schema does not name, as iFit writes its machines' power, calories and
+// resistance.
 //
 // Only when there is no activity are its courses read, and a course is a
 // plan -- see recording.planned. Its trackpoints carry times too, but they
@@ -131,6 +138,7 @@ func (p tcxPoint) fix() (fix, error) {
 	if p.Extensions != nil {
 		ext.Children = append(ext.Children, *p.Extensions)
 	}
+	ext.Children = append(ext.Children, p.Other...)
 	if err := f.extensions(ext); err != nil {
 		return f, err
 	}

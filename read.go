@@ -360,6 +360,12 @@ func xmlName(local string) xml.Name { return xml.Name{Local: local} }
 // few others that are common, at whatever depth and in whatever namespace.
 // The first value for each is taken. A value out of the range a Sample holds
 // it in is an error, not a truncation.
+//
+// A heart rate of 0 is no heart rate: these formats have no sentinel for a
+// missing reading, and a program that has none to give writes 0 -- iFit
+// does, for every second before its strap connects. Taken as a reading, it
+// would draw a pulse that stopped. Every other 0 is a reading: a cadence
+// or a power of 0 is a rider who stopped pedalling.
 func (s *Sample) extensions(ext *xmlAny) error {
 	if ext == nil {
 		return nil
@@ -376,6 +382,12 @@ func (s *Sample) extensions(ext *xmlAny) error {
 			continue
 		}
 		name := strings.ToLower(c.XMLName.Local)
+		// Only the names read below are read as numbers: an element of any
+		// other name is some program's own, and may be anything -- TCX's
+		// SensorState is "Present" -- so it is passed over, not refused.
+		if !extensionNames[name] {
+			continue
+		}
 		v, _, err := number(text, name)
 		if err != nil {
 			return err
@@ -393,6 +405,9 @@ func (s *Sample) extensions(ext *xmlAny) error {
 			}
 			if err := inRange(0, math.MaxUint8); err != nil {
 				return err
+			}
+			if math.Round(v) == 0 {
+				continue
 			}
 			s.HeartRate, s.HasHeartRate = uint8(math.Round(v)), true
 		case "cad", "cadence", "runcadence":
@@ -419,6 +434,22 @@ func (s *Sample) extensions(ext *xmlAny) error {
 				return err
 			}
 			s.Power, s.HasPower = uint16(math.Round(v)), true
+		case "calories":
+			if s.HasCalories {
+				continue
+			}
+			if err := inRange(0, math.Inf(1)); err != nil {
+				return err
+			}
+			s.Calories, s.HasCalories = v, true
+		case "resistance":
+			if s.HasResistance {
+				continue
+			}
+			if err := inRange(0, math.Inf(1)); err != nil {
+				return err
+			}
+			s.Resistance, s.HasResistance = v, true
 		case "speed":
 			if s.HasSpeed {
 				continue
@@ -430,6 +461,13 @@ func (s *Sample) extensions(ext *xmlAny) error {
 		}
 	}
 	return nil
+}
+
+// extensionNames are the element names extensions reads, lower case.
+var extensionNames = map[string]bool{
+	"hr": true, "heartrate": true, "cad": true, "cadence": true, "runcadence": true,
+	"atemp": true, "temp": true, "temperature": true, "power": true, "watts": true,
+	"calories": true, "resistance": true, "speed": true,
 }
 
 // kmzDocument is the KML inside a KMZ: by the format's rule the first .kml
