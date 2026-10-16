@@ -195,6 +195,27 @@ func TestClimbs(t *testing.T) {
 	}
 }
 
+// A climb starts where the road begins to climb, not on the gentle
+// lead-in to it: 400 m rising half a per cent is the approach to a hill,
+// and the climb -- and a descent, the same way down -- is the hill.
+func TestAClimbStartsAtTheHill(t *testing.T) {
+	flat := func(m float64) part { return part{secs: int(m / 3), speed: 3, power: 250} }
+	slope := func(m, grade float64) part { return part{secs: int(m / 3), speed: 3, power: 250, grade: grade} }
+	tr := build("running", flat(600), slope(400, 0.005), slope(300, 0.06), flat(600),
+		slope(400, -0.005), slope(300, -0.06), flat(600))
+	a := Analyse(tr, Options{Elevation: fitactivity.ElevationOptions{Sigma: 1}})
+	if len(a.Climbs) != 1 || len(a.Descents) != 1 {
+		t.Fatalf("climbs %+v, descents %+v; want one of each", a.Climbs, a.Descents)
+	}
+	if c := a.Climbs[0]; math.Abs(c.StartDistance-1000) > 30 || math.Abs(c.Gain-18) > 2 || c.Grade < 0.05 {
+		t.Errorf("the climb starts at %.0f m, gaining %.1f m at %.1f%%; want the hill's 18 m at 6%% from 1000 m",
+			c.StartDistance, c.Gain, 100*c.Grade)
+	}
+	if d := a.Descents[0]; math.Abs(d.StartDistance-2300) > 30 || d.Grade < 0.05 {
+		t.Errorf("the descent starts at %.0f m at %.1f%%; want the steep way down from 2300 m", d.StartDistance, 100*d.Grade)
+	}
+}
+
 // Descents are climbs the other way: a hill up and back down is a climb
 // and a descent, a rise partway down does not end the descent, and a
 // drop too small is none.

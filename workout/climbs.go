@@ -19,6 +19,12 @@ const (
 // climbStep is the distance the elevation profile is read at, in metres.
 const climbStep = 5.0
 
+// climbStart is how far ahead a climb's start is judged by, in metres:
+// where the road rises at a climb's grade over this far is where the climb
+// begins. Long enough that a metre's wobble on the flat is not a start,
+// short enough that a hill's first steep pitch is.
+const climbStart = 50.0
+
 // climbFlat is how far the road may run without a new top before the
 // climb is over, in metres: a climb ends on a long flat as surely as on a
 // descent, or a bump, a kilometre of flat and a hill would be one gentle
@@ -92,6 +98,20 @@ func rises(ds, es []float64, minGain, minGrade float64) [][2]int {
 				start = k
 				break
 			}
+		}
+		// Nor does it start on the gentle lead-in that wobbles up to it:
+		// the climb starts where the road begins to rise at a climb's
+		// grade, over the climbStart ahead, as a race's timing mat for a
+		// hill is put where the hill begins.
+		for start < top {
+			ahead := start
+			for ahead < top && ds[ahead]-ds[start] < climbStart {
+				ahead++
+			}
+			if es[ahead]-es[start] >= minGrade*(ds[ahead]-ds[start]) {
+				break
+			}
+			start++
 		}
 		gain, run := es[top]-es[start], ds[top]-ds[start]
 		if gain >= minGain && run > 0 && gain/run >= minGrade {
