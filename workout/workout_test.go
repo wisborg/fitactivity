@@ -195,6 +195,35 @@ func TestClimbs(t *testing.T) {
 	}
 }
 
+// Descents are climbs the other way: a hill up and back down is a climb
+// and a descent, a rise partway down does not end the descent, and a
+// drop too small is none.
+func TestDescents(t *testing.T) {
+	flat := func(m float64) part { return part{secs: int(m / 3), speed: 3, power: 250} }
+	slope := func(m, grade float64) part { return part{secs: int(m / 3), speed: 3, power: 250, grade: grade} }
+	tr := build("running",
+		flat(600), slope(300, 0.06), flat(300), // up 18 m
+		slope(240, -0.05), slope(30, 0.03), slope(180, -0.05), flat(600), // down 21 m with a rise
+		slope(60, -0.03), flat(600)) // a drop of about 2 m
+	a := Analyse(tr, Options{Elevation: fitactivity.ElevationOptions{Sigma: 1}})
+	if len(a.Climbs) != 1 || math.Abs(a.Climbs[0].Gain-18) > 3 {
+		t.Errorf("climbs %+v, want one of 18 m", a.Climbs)
+	}
+	if len(a.Descents) != 1 {
+		t.Fatalf("%d descents %+v, want 1", len(a.Descents), a.Descents)
+	}
+	d := a.Descents[0]
+	if math.Abs(d.Loss-20) > 3 || d.Grade < 0.04 || d.Grade > 0.06 {
+		t.Errorf("the descent loses %.1f m at %.1f%%, want about 20 m at 5%%", d.Loss, 100*d.Grade)
+	}
+	if dist, ok := d.Distance(); !ok || math.Abs(dist-450) > 40 {
+		t.Errorf("the descent runs %.0f m, want about 450 from its top", dist)
+	}
+	if !d.Start.After(a.Climbs[0].End) || math.Abs(d.StartElevation-(a.Climbs[0].StartElevation+a.Climbs[0].Gain)) > 2 {
+		t.Errorf("the descent %+v does not start from the climb's top", d)
+	}
+}
+
 // Effort is measured by power where there is some; by grade-adjusted
 // speed for a run without; by speed for a ride without; and by heart
 // rate where there is nothing else.

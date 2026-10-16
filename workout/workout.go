@@ -1,7 +1,7 @@
 // Package workout finds the structure of a recorded workout: where it
 // stopped, the stretches of steady effort between, the levels those
 // efforts fall into, the sets of repeated intervals among them, and the
-// climbs along the way.
+// climbs and descents along the way.
 //
 // It answers "what was this workout?" from the recording alone -- a
 // warm-up, nine intervals of five minutes at one effort with recoveries
@@ -26,16 +26,17 @@ type Options struct {
 	// Power is the source power is read from, as every consumer of this
 	// module reads it: by default a Stryd footpod's where there is one.
 	Power fitactivity.PowerSource
-	// Elevation tunes the elevation model climbs are found on; the zero
+	// Elevation tunes the elevation model climbs and descents are found
+	// on; the zero
 	// value is fitactivity's own defaults. A caller that tunes the model
 	// for a profile passes the same here, so a climb and the profile it
 	// is drawn on agree.
 	Elevation fitactivity.ElevationOptions
-	// MinClimbGain is the least a climb gains, in metres; 0 is
-	// DefaultMinClimbGain.
+	// MinClimbGain is the least a climb gains, and a descent loses, in
+	// metres; 0 is DefaultMinClimbGain.
 	MinClimbGain float64
-	// MinClimbGrade is the least a climb averages, as a fraction; 0 is
-	// DefaultMinClimbGrade.
+	// MinClimbGrade is the least a climb or a descent averages, as a
+	// fraction; 0 is DefaultMinClimbGrade.
 	MinClimbGrade float64
 }
 
@@ -58,6 +59,8 @@ type Analysis struct {
 	Sets []Set
 	// Climbs are the climbs along the way, in order.
 	Climbs []Climb
+	// Descents are the descents along the way, in order.
+	Descents []Descent
 }
 
 // Span is a stretch of the activity: when it began and ended, and the
@@ -147,6 +150,20 @@ type Climb struct {
 	HasGPS   bool
 }
 
+// Descent is a stretch of road that fell, with its rises: a climb run the
+// other way.
+type Descent struct {
+	Span
+	// Loss is how much it fell, top to bottom, in metres; Grade its mean
+	// grade downhill, as a positive fraction.
+	Loss, Grade float64
+	// StartElevation is the elevation it began at, its top, in metres.
+	StartElevation float64
+	// Lat and Lon are where it began, where the activity has a fix there.
+	Lat, Lon float64
+	HasGPS   bool
+}
+
 // Analyse finds the structure of t.
 func Analyse(t *fitactivity.Track, opts Options) Analysis {
 	var a Analysis
@@ -166,6 +183,6 @@ func Analyse(t *fitactivity.Track, opts Options) Analysis {
 			a.Sets = sets(a.Segments, a.Stops)
 		}
 	}
-	a.Climbs = climbs(t, elev, opts)
+	a.Climbs, a.Descents = climbs(t, elev, opts)
 	return a
 }
