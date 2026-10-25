@@ -25,6 +25,8 @@ func stravaJSON(t *testing.T, edit func(map[string]any)) string {
 		"kudos_count":        3,
 		"comment_count":      1,
 		"suffer_score":       8.0,
+		"calories":           483.0,
+		"kilojoules":         667.2,
 		"workout_type":       1,
 		"commute":            true,
 		"trainer":            false,
@@ -99,6 +101,9 @@ func TestReadStrava(t *testing.T) {
 	if !a.HasRelativeEffort || a.RelativeEffort != 8 || a.WorkoutType != "race" || !a.Commute || a.Trainer || a.Manual || a.HasPerceivedExertion {
 		t.Errorf("relative effort %v %v, workout %q, commute %v, trainer %v, manual %v, exertion %v",
 			a.HasRelativeEffort, a.RelativeEffort, a.WorkoutType, a.Commute, a.Trainer, a.Manual, a.HasPerceivedExertion)
+	}
+	if !a.HasCalories || a.Calories != 483 || !a.HasKilojoules || a.Kilojoules != 667.2 {
+		t.Errorf("calories %v %v, kilojoules %v %v", a.HasCalories, a.Calories, a.HasKilojoules, a.Kilojoules)
 	}
 	if a.Gear == nil || a.Gear.ID != "g9" || a.Gear.Name != "Invented Shoes" || a.Gear.Distance != 123456.7 {
 		t.Errorf("gear %+v", a.Gear)
@@ -187,12 +192,13 @@ func TestMergeKeepsTheFirstPiecesTitle(t *testing.T) {
 func TestReadStrava_WhatIsNotSetIsAbsent(t *testing.T) {
 	tr := readTrack(t, writeCourse(t, "a", stravaJSON(t, func(a map[string]any) {
 		a["suffer_score"], a["workout_type"], a["commute"] = nil, 0, false
+		a["calories"], a["kilojoules"] = 0, nil
 		a["perceived_exertion"] = 6
 		delete(a, "gear")
 		a["gear_id"] = "b3"
 	})))
 	a := tr.Strava
-	if a.HasRelativeEffort || a.WorkoutType != "" || a.Commute || !a.HasPerceivedExertion || a.PerceivedExertion != 6 {
+	if a.HasRelativeEffort || a.WorkoutType != "" || a.Commute || a.HasCalories || a.HasKilojoules || !a.HasPerceivedExertion || a.PerceivedExertion != 6 {
 		t.Errorf("activity %+v", a)
 	}
 	if a.Gear == nil || a.Gear.ID != "b3" || a.Gear.Name != "" {

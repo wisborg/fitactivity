@@ -51,6 +51,13 @@ type StravaActivity struct {
 	// Gear is what the activity was done in or on -- shoes, a bike -- or
 	// nil when none is set.
 	Gear *StravaGear
+
+	// Calories is Strava's estimate of the energy spent, in kilocalories,
+	// when HasCalories; Kilojoules the work done, worked out from power,
+	// when HasKilojoules -- only an activity with power has it. Both are
+	// Strava's figures, not the device's.
+	HasCalories, HasKilojoules bool
+	Calories, Kilojoules       float64
 }
 
 // StravaGear is a pair of shoes or a bike on Strava. An activity's details
@@ -119,6 +126,8 @@ type stravaActivity struct {
 	Trainer      bool           `json:"trainer"`
 	Manual       bool           `json:"manual"`
 	Exertion     *float64       `json:"perceived_exertion"`
+	Calories     *float64       `json:"calories"`
+	Kilojoules   *float64       `json:"kilojoules"`
 	GearID       *string        `json:"gear_id"`
 	Gear         *struct {
 		ID       string  `json:"id"`
@@ -211,6 +220,12 @@ func (a *stravaActivity) details() (StravaDetails, error) {
 	act.Commute, act.Trainer, act.Manual = a.Commute, a.Trainer, a.Manual
 	if a.Exertion != nil {
 		act.HasPerceivedExertion, act.PerceivedExertion = true, *a.Exertion
+	}
+	if a.Calories != nil && *a.Calories > 0 {
+		act.HasCalories, act.Calories = true, *a.Calories
+	}
+	if a.Kilojoules != nil && *a.Kilojoules > 0 {
+		act.HasKilojoules, act.Kilojoules = true, *a.Kilojoules
 	}
 	switch {
 	case a.Gear != nil && a.Gear.ID != "":
