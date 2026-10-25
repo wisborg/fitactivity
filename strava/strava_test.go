@@ -441,3 +441,43 @@ func TestGear_AskedForAndKept(t *testing.T) {
 		t.Errorf("no gear to add: %v", err)
 	}
 }
+
+func TestRefresh_AsksOnceForEachAndKeepsTheNewAnswer(t *testing.T) {
+	f := newFake(t)
+	c := loggedIn(t, f)
+	again := func(refresh bool) *Client {
+		n := New(c.creds, c.cache)
+		n.API, n.OAuth, n.Refresh = c.API, c.OAuth, refresh
+		return n
+	}
+	if _, err := c.Track(context.Background(), testActivity); err != nil {
+		t.Fatal(err)
+	}
+	r := again(true)
+	tr, err := r.Track(context.Background(), testActivity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Details are needed twice in a refresh -- for themselves and beside
+	// the streams -- and asked for once.
+	if _, err := r.Details(context.Background(), testActivity); err != nil {
+		t.Fatal(err)
+	}
+	tr.Strava.Gear = &fitactivity.StravaGear{ID: "g9"}
+	for range 2 {
+		if err := r.AddGear(context.Background(), tr); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if f.called("details") != 2 || f.called("streams") != 2 || f.called("gear") != 1 {
+		t.Errorf("details %d, streams %d, gear %d; want each asked for once more by the refresh",
+			f.called("details"), f.called("streams"), f.called("gear"))
+	}
+	// What the refresh fetched is what the cache now has.
+	if _, err := again(false).Track(context.Background(), testActivity); err != nil {
+		t.Fatal(err)
+	}
+	if f.called("details") != 2 || f.called("streams") != 2 {
+		t.Errorf("details %d, streams %d after; want the refreshed answers from the cache", f.called("details"), f.called("streams"))
+	}
+}

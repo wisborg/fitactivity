@@ -105,14 +105,14 @@ func (c *Client) Details(ctx context.Context, id int64) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if data, ok := c.cache.get(t.AthleteID, strconv.FormatInt(id, 10), "details"); ok {
+	if data, ok := c.cached(t.AthleteID, strconv.FormatInt(id, 10), "details"); ok {
 		return data, nil
 	}
 	var data []byte
 	if err := c.get(ctx, "/activities/"+strconv.FormatInt(id, 10), nil, &data); err != nil {
 		return nil, fmt.Errorf("fetching Strava activity %d: %w", id, err)
 	}
-	if err := c.cache.put(t.AthleteID, strconv.FormatInt(id, 10), "details", data); err != nil {
+	if err := c.keep(t.AthleteID, strconv.FormatInt(id, 10), "details", data); err != nil {
 		return nil, err
 	}
 	return data, nil
@@ -131,7 +131,7 @@ func (c *Client) WithStreams(ctx context.Context, id int64) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if data, ok := c.cache.get(t.AthleteID, strconv.FormatInt(id, 10), "streams"); ok {
+	if data, ok := c.cached(t.AthleteID, strconv.FormatInt(id, 10), "streams"); ok {
 		return data, nil
 	}
 	details, err := c.Details(ctx, id)
@@ -147,7 +147,7 @@ func (c *Client) WithStreams(ctx context.Context, id int64) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := c.cache.put(t.AthleteID, strconv.FormatInt(id, 10), "streams", data); err != nil {
+	if err := c.keep(t.AthleteID, strconv.FormatInt(id, 10), "streams", data); err != nil {
 		return nil, err
 	}
 	return data, nil
@@ -211,12 +211,12 @@ func (c *Client) Gear(ctx context.Context, id string) (fitactivity.StravaGear, e
 	if err != nil {
 		return fitactivity.StravaGear{}, err
 	}
-	data, ok := c.cache.get(t.AthleteID, id, "gear")
+	data, ok := c.cached(t.AthleteID, id, "gear")
 	if !ok {
 		if err := c.get(ctx, "/gear/"+url.PathEscape(id), nil, &data); err != nil {
 			return fitactivity.StravaGear{}, fmt.Errorf("fetching Strava gear %s: %w", id, err)
 		}
-		if err := c.cache.put(t.AthleteID, id, "gear", data); err != nil {
+		if err := c.keep(t.AthleteID, id, "gear", data); err != nil {
 			return fitactivity.StravaGear{}, err
 		}
 	}

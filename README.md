@@ -126,7 +126,8 @@ and athlete capacity are its own. The login's token is kept beside the credentia
 the same refresh token.
 
 What Strava's [API Policy](https://www.strava.com/legal/api_policy) asks is kept here: answers are
-cached for a day under the system's cache directory and deleted once older; only the athlete's
+cached for a day under the system's cache directory and deleted once older, and `Client.Refresh`
+asks again for what is fetched -- an activity edited on Strava since -- keeping the new answers; only the athlete's
 own activities are fetched; a rate limit reached is reported, never retried in a loop. The Policy
 also forbids using Strava data in operating an AI application, putting it into one's context
 included, so what this package fetches is not for a language model to read.

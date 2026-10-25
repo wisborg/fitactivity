@@ -32,6 +32,31 @@ type Client struct {
 	// when HasUsage.
 	Usage    RateUsage
 	HasUsage bool
+
+	// Refresh asks Strava again for whatever is fetched, rather than
+	// taking what the cache kept, and keeps the new answers there in its
+	// place: for an activity edited on Strava since it was last fetched.
+	// Each is asked for once, however often it is needed after.
+	Refresh bool
+	fresh   map[string]bool
+}
+
+// cached is what the cache keeps of kind about key, unless the client is
+// to refresh it and has not yet this time.
+func (c *Client) cached(athlete int64, key, kind string) ([]byte, bool) {
+	if c.Refresh && !c.fresh[key+"."+kind] {
+		return nil, false
+	}
+	return c.cache.get(athlete, key, kind)
+}
+
+// keep keeps an answer in the cache, as fresh for a refresh.
+func (c *Client) keep(athlete int64, key, kind string, data []byte) error {
+	if c.fresh == nil {
+		c.fresh = map[string]bool{}
+	}
+	c.fresh[key+"."+kind] = true
+	return c.cache.put(athlete, key, kind, data)
 }
 
 // The addresses of Strava's API and of its OAuth endpoints.
