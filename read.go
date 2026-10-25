@@ -136,6 +136,7 @@ const (
 	formatKML
 	formatKMZ
 	formatFR24
+	formatStrava
 )
 
 // sniff tells the formats apart by content. A FIT file says ".FIT" at byte 8
@@ -151,11 +152,14 @@ func sniff(data []byte) (format, error) {
 	if bytes.HasPrefix(withoutBOM(data), []byte(fr24Header)) {
 		return formatFR24, nil
 	}
+	if isStrava(data) {
+		return formatStrava, nil
+	}
 	dec := xml.NewDecoder(bytes.NewReader(withoutBOM(data)))
 	for {
 		tok, err := dec.Token()
 		if err != nil {
-			return 0, errors.New("not a FIT, GPX, TCX, KML or KMZ file, or a Flightradar24 CSV")
+			return 0, errors.New("not a FIT, GPX, TCX, KML or KMZ file, a Flightradar24 CSV or a Strava activity's JSON")
 		}
 		if se, ok := tok.(xml.StartElement); ok {
 			switch se.Name.Local {
@@ -192,6 +196,8 @@ type recording struct {
 	planned bool
 	// flights are the flights the file says it is of; see Track.Flights.
 	flights []Flight
+	// strava is what Strava says about the activity, for Strava's JSON.
+	strava *StravaDetails
 }
 
 // fix is one point of a recording. Its Sample's Time is meaningful only when
@@ -213,6 +219,8 @@ func readRecording(f format, data []byte) (*recording, error) {
 		return readKMZ(data)
 	case formatFR24:
 		return readFR24(data)
+	case formatStrava:
+		return readStrava(data)
 	}
 	return nil, fmt.Errorf("no reader for format %d", f)
 }
@@ -252,14 +260,18 @@ func (r *recording) track(path string) (*Track, error) {
 		}
 	}
 	samples = kept
-	return &Track{
+	t := &Track{
 		SourcePath: path,
 		Sources:    []string{path},
 		Sport:      r.sport,
 		Flights:    r.flights,
 		Samples:    samples,
 		Timing:     r.timing,
-	}, nil
+	}
+	if r.strava != nil {
+		t.AttachStrava(*r.strava)
+	}
+	return t, nil
 }
 
 // route is the recording's geometry: a recording's in time order through the

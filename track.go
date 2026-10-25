@@ -280,6 +280,16 @@ type Track struct {
 	// each, in order. Empty for anything else.
 	Flights []Flight
 
+	// Title and Description are what the activity was called and what was
+	// written about it, where the file says: Strava's, for an activity
+	// read from Strava or given its details by AttachStrava. Empty
+	// otherwise.
+	Title, Description string
+
+	// Strava is the activity on Strava, for one read from Strava or given
+	// its details by AttachStrava; nil otherwise.
+	Strava *StravaActivity
+
 	// MaxGap, when above zero, is the gap tolerance GapTolerance answers
 	// in place of the one the sampling calls for: set by a program that
 	// knows better than the rhythm of the fixes how far a reading may be

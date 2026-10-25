@@ -1,6 +1,7 @@
 # fitactivity
 
-Go package for reading a recorded activity — FIT, GPX, TCX, KML, KMZ or a Flightradar24 flight's CSV — and
+Go package for reading a recorded activity — FIT, GPX, TCX, KML, KMZ, a Flightradar24 flight's CSV or a
+Strava activity's JSON — and
 deriving the models a program draws or exports from: an interpolatable track, an elevation profile,
 kilometre splits, and an elapsed-versus-active timer.
 
@@ -56,8 +57,10 @@ pays off if you preserve it. A gauge that renders a missing heart rate as
 | | |
 |---|---|
 | `Decode` | FIT file → `*Track`: sorted `Sample`s, sport, session totals, timer events |
-| `Read` | FIT, GPX, TCX, KML, KMZ or a Flightradar24 CSV → `*Track`, told apart by content; a file without a time on every point is refused with `ErrNoTimes` rather than given invented ones |
+| `Read` | FIT, GPX, TCX, KML, KMZ, a Flightradar24 CSV or a Strava activity's JSON with its streams → `*Track`, told apart by content; a file without a time on every point is refused with `ErrNoTimes` rather than given invented ones |
 | `Track.Flights`, `Sample.Course` | a flight tracker's flight — number, callsign, the airports it flew between — and the direction of travel it reports; absent for anything else. A Flightradar24 KML alone is the whole flight: the same reports as its CSV, speed and track included, read from each point's pop-up, plus the flight number and airports the CSV lacks |
+| `Track.Title`, `Description`, `Strava` | what the activity was called and what was written about it, and the activity on Strava — its id and page, the segments Strava matched along it, its photo, kudos and comments — for one read from Strava's JSON (RunGap's `.strava.json` export, or what the API answers with the streams beside it). Only what was recorded becomes samples: Strava's smoothed speed, grade and moving flags are its own workings and are left out, and what a FIT file has that Strava drops — developer fields, running dynamics, timer events — is absent |
+| `ParseStrava`, `Track.AttachStrava` | Strava's details of an activity, without its streams, given to a track read from elsewhere: a watch's FIT file with Strava's title, description and segments |
 | `ReadRoute` | any of those → `*Route`, the geometry alone: what a planned route has, and what a map needs |
 | `Track.At` / `AtWithGap` | the track interpolated at an arbitrary instant, with per-field presence carried through and a max-gap that refuses to invent data across a dropout |
 | `Track.GapTolerance` | the max-gap the track's own sampling calls for: a second's recording keeps the default, a flight tracker reporting every half-minute gets twice that; `Track.MaxGap`, when set, answers instead — a program drawing a flight across a hole in its tracker's coverage sets it |

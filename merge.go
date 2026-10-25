@@ -178,6 +178,11 @@ func Merge(tracks ...*Track) (*Track, error) {
 		}
 		merged.Sources = append(merged.Sources, t.Sources...)
 		merged.Flights = append(merged.Flights, t.Flights...)
+		// A workout recorded in pieces is one activity, and its title is
+		// the first piece's to say: the others' are the same activity's.
+		if merged.Title == "" && merged.Description == "" && merged.Strava == nil {
+			merged.Title, merged.Description, merged.Strava = t.Title, t.Description, t.Strava
+		}
 	}
 
 	// Samples are NOT re-sorted. Each track arrives sorted from Decode, and
