@@ -24,11 +24,16 @@ type Cache struct {
 }
 
 // DefaultCacheDir is where the cache is kept unless a program says
-// otherwise: under the system's cache directory, which it may empty.
+// otherwise: under $XDG_CACHE_HOME where it is set, as the credentials are
+// under $XDG_CONFIG_HOME, and otherwise the system's cache directory, which
+// it may empty.
 func DefaultCacheDir() (string, error) {
-	base, err := os.UserCacheDir()
-	if err != nil {
-		return "", err
+	base := os.Getenv("XDG_CACHE_HOME")
+	if base == "" {
+		var err error
+		if base, err = os.UserCacheDir(); err != nil {
+			return "", err
+		}
 	}
 	return filepath.Join(base, "fitactivity", "strava"), nil
 }
