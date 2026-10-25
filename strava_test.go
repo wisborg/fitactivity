@@ -14,16 +14,23 @@ import (
 func stravaJSON(t *testing.T, edit func(map[string]any)) string {
 	t.Helper()
 	a := map[string]any{
-		"id":            int64(1234567890),
-		"name":          "  Invented Run ",
-		"description":   "Line one.\n\nLine two.",
-		"sport_type":    "TrailRun",
-		"type":          "Run",
-		"start_date":    "2026-04-02T06:00:00Z",
-		"external_id":   "123.fit",
-		"device_watts":  true,
-		"kudos_count":   3,
-		"comment_count": 1,
+		"id":                 int64(1234567890),
+		"name":               "  Invented Run ",
+		"description":        "Line one.\n\nLine two.",
+		"sport_type":         "TrailRun",
+		"type":               "Run",
+		"start_date":         "2026-04-02T06:00:00Z",
+		"external_id":        "123.fit",
+		"device_watts":       true,
+		"kudos_count":        3,
+		"comment_count":      1,
+		"suffer_score":       8.0,
+		"workout_type":       1,
+		"commute":            true,
+		"trainer":            false,
+		"perceived_exertion": nil,
+		"gear_id":            "g9",
+		"gear":               map[string]any{"id": "g9", "name": "Invented Shoes", "distance": 123456.7},
 		"photos": map[string]any{"primary": map[string]any{"urls": map[string]any{
 			"100": "https://example.invalid/small.jpg", "600": "https://example.invalid/large.jpg",
 		}}},
@@ -88,6 +95,13 @@ func TestReadStrava(t *testing.T) {
 	}
 	if a.PhotoURL != "https://example.invalid/large.jpg" || a.Kudos != 3 || a.Comments != 1 {
 		t.Errorf("photo %q, kudos %d, comments %d", a.PhotoURL, a.Kudos, a.Comments)
+	}
+	if !a.HasRelativeEffort || a.RelativeEffort != 8 || a.WorkoutType != "race" || !a.Commute || a.Trainer || a.Manual || a.HasPerceivedExertion {
+		t.Errorf("relative effort %v %v, workout %q, commute %v, trainer %v, manual %v, exertion %v",
+			a.HasRelativeEffort, a.RelativeEffort, a.WorkoutType, a.Commute, a.Trainer, a.Manual, a.HasPerceivedExertion)
+	}
+	if a.Gear == nil || a.Gear.ID != "g9" || a.Gear.Name != "Invented Shoes" || a.Gear.Distance != 123456.7 {
+		t.Errorf("gear %+v", a.Gear)
 	}
 	if len(a.Segments) != 1 || a.Segments[0].Name != "Invented Hill" || a.Segments[0].ID != 42 ||
 		!a.Segments[0].Start.Equal(readBase.Add(time.Second)) || !a.Segments[0].End.Equal(readBase.Add(2*time.Second)) {
@@ -167,5 +181,21 @@ func TestMergeKeepsTheFirstPiecesTitle(t *testing.T) {
 	}
 	if m.Title != "Invented Run" || m.Strava.ID != 1234567890 {
 		t.Errorf("merged title %q, strava %+v; want the earlier piece's", m.Title, m.Strava)
+	}
+}
+
+func TestReadStrava_WhatIsNotSetIsAbsent(t *testing.T) {
+	tr := readTrack(t, writeCourse(t, "a", stravaJSON(t, func(a map[string]any) {
+		a["suffer_score"], a["workout_type"], a["commute"] = nil, 0, false
+		a["perceived_exertion"] = 6
+		delete(a, "gear")
+		a["gear_id"] = "b3"
+	})))
+	a := tr.Strava
+	if a.HasRelativeEffort || a.WorkoutType != "" || a.Commute || !a.HasPerceivedExertion || a.PerceivedExertion != 6 {
+		t.Errorf("activity %+v", a)
+	}
+	if a.Gear == nil || a.Gear.ID != "b3" || a.Gear.Name != "" {
+		t.Errorf("gear %+v; want its id alone", a.Gear)
 	}
 }

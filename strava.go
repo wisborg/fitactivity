@@ -27,6 +27,43 @@ type StravaActivity struct {
 	PhotoURL string
 	// Kudos and Comments are how many the activity has.
 	Kudos, Comments int
+
+	// RelativeEffort is Strava's Relative Effort, when HasRelativeEffort:
+	// how hard the activity was by heart rate, or by perceived exertion
+	// without one. The API calls it suffer_score.
+	HasRelativeEffort bool
+	RelativeEffort    float64
+
+	// WorkoutType is what the athlete marked the activity as: "race",
+	// "long run" or "workout", or empty for none.
+	WorkoutType string
+
+	// Commute, Trainer and Manual are the athlete's and Strava's flags: a
+	// commute; recorded on a training machine -- a treadmill, a turbo
+	// trainer; entered by hand rather than recorded.
+	Commute, Trainer, Manual bool
+
+	// PerceivedExertion is the athlete's own rating of how hard it was,
+	// from 1 to 10, when HasPerceivedExertion.
+	HasPerceivedExertion bool
+	PerceivedExertion    float64
+
+	// Gear is what the activity was done in or on -- shoes, a bike -- or
+	// nil when none is set.
+	Gear *StravaGear
+}
+
+// StravaGear is a pair of shoes or a bike on Strava. An activity's details
+// name it and give its distance; its brand, model and description need
+// asking for it (strava.Client.Gear).
+type StravaGear struct {
+	ID   string
+	Name string
+	// Distance is the distance logged with it, all told, in metres.
+	Distance                  float64
+	Brand, Model, Description string
+	// Retired reports whether the athlete has retired it.
+	Retired bool
 }
 
 // StravaSegment is one segment effort: the segment's name and when the
@@ -64,19 +101,32 @@ func (t *Track) AttachStrava(d StravaDetails) {
 // GET /activities/{id}, and RunGap's ".strava.json" export of the same with
 // its streams beside it.
 type stravaActivity struct {
-	ID           *int64          `json:"id"`
-	Name         string          `json:"name"`
-	Description  *string         `json:"description"`
-	SportType    string          `json:"sport_type"`
-	Type         string          `json:"type"`
-	StartDate    string          `json:"start_date"`
-	ExternalID   *string         `json:"external_id"`
-	DeviceWatts  *bool           `json:"device_watts"`
-	KudosCount   int             `json:"kudos_count"`
-	CommentCount int             `json:"comment_count"`
-	Photos       *stravaPhotos   `json:"photos"`
-	Efforts      []stravaEffort  `json:"segment_efforts"`
-	Streams      json.RawMessage `json:"streams"`
+	ID           *int64         `json:"id"`
+	Name         string         `json:"name"`
+	Description  *string        `json:"description"`
+	SportType    string         `json:"sport_type"`
+	Type         string         `json:"type"`
+	StartDate    string         `json:"start_date"`
+	ExternalID   *string        `json:"external_id"`
+	DeviceWatts  *bool          `json:"device_watts"`
+	KudosCount   int            `json:"kudos_count"`
+	CommentCount int            `json:"comment_count"`
+	Photos       *stravaPhotos  `json:"photos"`
+	Efforts      []stravaEffort `json:"segment_efforts"`
+	SufferScore  *float64       `json:"suffer_score"`
+	WorkoutType  *int           `json:"workout_type"`
+	Commute      bool           `json:"commute"`
+	Trainer      bool           `json:"trainer"`
+	Manual       bool           `json:"manual"`
+	Exertion     *float64       `json:"perceived_exertion"`
+	GearID       *string        `json:"gear_id"`
+	Gear         *struct {
+		ID       string  `json:"id"`
+		Name     string  `json:"name"`
+		Distance float64 `json:"distance"`
+		Retired  bool    `json:"retired"`
+	} `json:"gear"`
+	Streams json.RawMessage `json:"streams"`
 }
 
 type stravaPhotos struct {
@@ -151,6 +201,23 @@ func (a *stravaActivity) details() (StravaDetails, error) {
 	if a.Photos != nil && a.Photos.Primary != nil {
 		d.Activity.PhotoURL = largest(a.Photos.Primary.URLs)
 	}
+	act := &d.Activity
+	if a.SufferScore != nil {
+		act.HasRelativeEffort, act.RelativeEffort = true, *a.SufferScore
+	}
+	if a.WorkoutType != nil {
+		act.WorkoutType = workoutTypes[*a.WorkoutType]
+	}
+	act.Commute, act.Trainer, act.Manual = a.Commute, a.Trainer, a.Manual
+	if a.Exertion != nil {
+		act.HasPerceivedExertion, act.PerceivedExertion = true, *a.Exertion
+	}
+	switch {
+	case a.Gear != nil && a.Gear.ID != "":
+		act.Gear = &StravaGear{ID: a.Gear.ID, Name: strings.TrimSpace(a.Gear.Name), Distance: a.Gear.Distance, Retired: a.Gear.Retired}
+	case a.GearID != nil && *a.GearID != "":
+		act.Gear = &StravaGear{ID: *a.GearID}
+	}
 	for _, e := range a.Efforts {
 		at, err := parseTime(e.StartDate)
 		if err != nil {
@@ -163,6 +230,11 @@ func (a *stravaActivity) details() (StravaDetails, error) {
 	}
 	return d, nil
 }
+
+// workoutTypes are the names of Strava's workout types, by the numbers its
+// API gives them: a run's from 0, a ride's from 10. A run's or ride's
+// default, 0 or 10, is none.
+var workoutTypes = map[int]string{1: "race", 2: "long run", 3: "workout", 11: "race", 12: "workout"}
 
 // largest is the URL of the largest size a photo is offered at, Strava
 // keying each by its width in pixels.

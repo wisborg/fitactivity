@@ -14,6 +14,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/wisborg/fitactivity"
 )
 
 // fake is a stand-in for Strava: its OAuth and the few API calls the client
@@ -126,6 +128,9 @@ func (f *fake) api(w http.ResponseWriter, r *http.Request) {
 			f.t.Errorf("streams asked for %q", r.URL.Query().Get("keys"))
 		}
 		fmt.Fprint(w, `[{"type":"time","data":[0,1,2]},{"type":"latlng","data":[[10,20],[10.0001,20],[10.0002,20]]},{"type":"heartrate","data":[120,121,122]}]`)
+	case "/gear/g9":
+		f.count("gear")
+		fmt.Fprint(w, `{"id":"g9","name":"Invented Shoes","distance":123456.7,"brand_name":"Brand","model_name":"Model 2","description":"Blue."}`)
 	case "/athlete/activities":
 		f.count("list")
 		q := r.URL.Query()
@@ -413,5 +418,26 @@ func TestLoadCredentials(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	if _, err := LoadCredentials(""); !errors.Is(err, ErrNoCredentials) {
 		t.Errorf("nothing anywhere: %v", err)
+	}
+}
+
+func TestGear_AskedForAndKept(t *testing.T) {
+	f := newFake(t)
+	c := loggedIn(t, f)
+	tr := &fitactivity.Track{Strava: &fitactivity.StravaActivity{Gear: &fitactivity.StravaGear{ID: "g9"}}}
+	for range 2 {
+		if err := c.AddGear(context.Background(), tr); err != nil {
+			t.Fatal(err)
+		}
+	}
+	g := tr.Strava.Gear
+	if g.Name != "Invented Shoes" || g.Brand != "Brand" || g.Model != "Model 2" || g.Description != "Blue." {
+		t.Errorf("gear %+v", g)
+	}
+	if f.called("gear") != 1 {
+		t.Errorf("gear asked for %d times; the second is the cache's", f.called("gear"))
+	}
+	if err := c.AddGear(context.Background(), &fitactivity.Track{}); err != nil {
+		t.Errorf("no gear to add: %v", err)
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/wisborg/fitactivity"
@@ -104,14 +105,14 @@ func (c *Client) Details(ctx context.Context, id int64) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if data, ok := c.cache.get(t.AthleteID, id, "details"); ok {
+	if data, ok := c.cache.get(t.AthleteID, strconv.FormatInt(id, 10), "details"); ok {
 		return data, nil
 	}
 	var data []byte
 	if err := c.get(ctx, "/activities/"+strconv.FormatInt(id, 10), nil, &data); err != nil {
 		return nil, fmt.Errorf("fetching Strava activity %d: %w", id, err)
 	}
-	if err := c.cache.put(t.AthleteID, id, "details", data); err != nil {
+	if err := c.cache.put(t.AthleteID, strconv.FormatInt(id, 10), "details", data); err != nil {
 		return nil, err
 	}
 	return data, nil
@@ -130,7 +131,7 @@ func (c *Client) WithStreams(ctx context.Context, id int64) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if data, ok := c.cache.get(t.AthleteID, id, "streams"); ok {
+	if data, ok := c.cache.get(t.AthleteID, strconv.FormatInt(id, 10), "streams"); ok {
 		return data, nil
 	}
 	details, err := c.Details(ctx, id)
@@ -146,7 +147,7 @@ func (c *Client) WithStreams(ctx context.Context, id int64) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := c.cache.put(t.AthleteID, id, "streams", data); err != nil {
+	if err := c.cache.put(t.AthleteID, strconv.FormatInt(id, 10), "streams", data); err != nil {
 		return nil, err
 	}
 	return data, nil
@@ -200,4 +201,52 @@ func (c *Client) Attach(ctx context.Context, t *fitactivity.Track, file string) 
 	}
 	t.AttachStrava(d)
 	return s, nil
+}
+
+// Gear is the athlete's piece of gear id in full -- its brand, model and
+// description beside the name and distance an activity's details give.
+// From the cache when it has it, and kept there.
+func (c *Client) Gear(ctx context.Context, id string) (fitactivity.StravaGear, error) {
+	t, err := c.Token(ctx)
+	if err != nil {
+		return fitactivity.StravaGear{}, err
+	}
+	data, ok := c.cache.get(t.AthleteID, id, "gear")
+	if !ok {
+		if err := c.get(ctx, "/gear/"+url.PathEscape(id), nil, &data); err != nil {
+			return fitactivity.StravaGear{}, fmt.Errorf("fetching Strava gear %s: %w", id, err)
+		}
+		if err := c.cache.put(t.AthleteID, id, "gear", data); err != nil {
+			return fitactivity.StravaGear{}, err
+		}
+	}
+	var g struct {
+		ID          string  `json:"id"`
+		Name        string  `json:"name"`
+		Distance    float64 `json:"distance"`
+		Brand       string  `json:"brand_name"`
+		Model       string  `json:"model_name"`
+		Description string  `json:"description"`
+		Retired     bool    `json:"retired"`
+	}
+	if err := json.Unmarshal(data, &g); err != nil {
+		return fitactivity.StravaGear{}, fmt.Errorf("decoding Strava gear %s: %w", id, err)
+	}
+	return fitactivity.StravaGear{ID: g.ID, Name: strings.TrimSpace(g.Name), Distance: g.Distance,
+		Brand: strings.TrimSpace(g.Brand), Model: strings.TrimSpace(g.Model),
+		Description: strings.TrimSpace(g.Description), Retired: g.Retired}, nil
+}
+
+// AddGear gives t's gear on Strava its brand, model and description, when
+// t has gear there.
+func (c *Client) AddGear(ctx context.Context, t *fitactivity.Track) error {
+	if t.Strava == nil || t.Strava.Gear == nil {
+		return nil
+	}
+	g, err := c.Gear(ctx, t.Strava.Gear.ID)
+	if err != nil {
+		return err
+	}
+	t.Strava.Gear = &g
+	return nil
 }

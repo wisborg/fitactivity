@@ -104,17 +104,19 @@ func (c *Cache) athleteDir(athlete int64) string {
 	return filepath.Join(c.dir, strconv.FormatInt(athlete, 10))
 }
 
-func (c *Cache) path(athlete, id int64, kind string) string {
-	return filepath.Join(c.athleteDir(athlete), fmt.Sprintf("%d.%s.json", id, kind))
+// path is where the answer of kind about key -- an activity's id, a piece
+// of gear's -- is kept.
+func (c *Cache) path(athlete int64, key, kind string) string {
+	return filepath.Join(c.athleteDir(athlete), fmt.Sprintf("%s.%s.json", key, kind))
 }
 
-// get is the answer of kind for activity id, when one younger than
-// CacheTTL is kept.
-func (c *Cache) get(athlete, id int64, kind string) ([]byte, bool) {
+// get is the answer of kind about key, when one younger than CacheTTL is
+// kept.
+func (c *Cache) get(athlete int64, key, kind string) ([]byte, bool) {
 	if c == nil {
 		return nil, false
 	}
-	p := c.path(athlete, id, kind)
+	p := c.path(athlete, key, kind)
 	info, err := os.Stat(p)
 	if err != nil || c.now().Sub(info.ModTime()) > CacheTTL {
 		return nil, false
@@ -123,8 +125,8 @@ func (c *Cache) get(athlete, id int64, kind string) ([]byte, bool) {
 	return data, err == nil
 }
 
-// put keeps the answer of kind for activity id, for its owner alone.
-func (c *Cache) put(athlete, id int64, kind string, data []byte) error {
+// put keeps the answer of kind about key, for its owner alone.
+func (c *Cache) put(athlete int64, key, kind string, data []byte) error {
 	if c == nil {
 		return nil
 	}
@@ -144,7 +146,7 @@ func (c *Cache) put(athlete, id int64, kind string, data []byte) error {
 	if err := f.Close(); err != nil {
 		return err
 	}
-	return os.Rename(f.Name(), c.path(athlete, id, kind))
+	return os.Rename(f.Name(), c.path(athlete, key, kind))
 }
 
 // Refresh deletes what is kept for activity id, so the next fetch asks
