@@ -61,6 +61,7 @@ pays off if you preserve it. A gauge that renders a missing heart rate as
 | `Track.Flights`, `Sample.Course` | a flight tracker's flight — number, callsign, the airports it flew between — and the direction of travel it reports; absent for anything else. A Flightradar24 KML alone is the whole flight: the same reports as its CSV, speed and track included, read from each point's pop-up, plus the flight number and airports the CSV lacks |
 | `Track.Title`, `Description`, `Strava` | what the activity was called and what was written about it, and the activity on Strava — its id and page, the segments Strava matched along it, its photo, kudos and comments — for one read from Strava's JSON (RunGap's `.strava.json` export, or what the API answers with the streams beside it). Only what was recorded becomes samples: Strava's smoothed speed, grade and moving flags are its own workings and are left out, and what a FIT file has that Strava drops — developer fields, running dynamics, timer events — is absent |
 | `ParseStrava`, `Track.AttachStrava` | Strava's details of an activity, without its streams, given to a track read from elsewhere: a watch's FIT file with Strava's title, description and segments |
+| `strava` | a user's own activities fetched from Strava's API with their own registered application: `Login` (a browser sent back to localhost, or an address pasted), `Activities` over a date range, `Match` to a recording's start, `Track` with the streams, `Attach` of Strava's details to a FIT file's track. Strava's API Policy is kept by the package rather than its callers: answers are cached a day and then deleted, only the athlete's own data is fetched, and a rate limit reached is reported with when it resets. See [Strava](#strava) |
 | `ReadRoute` | any of those → `*Route`, the geometry alone: what a planned route has, and what a map needs |
 | `Track.At` / `AtWithGap` | the track interpolated at an arbitrary instant, with per-field presence carried through and a max-gap that refuses to invent data across a dropout |
 | `Track.GapTolerance` | the max-gap the track's own sampling calls for: a second's recording keeps the default, a flight tracker reporting every half-minute gets twice that; `Track.MaxGap`, when set, answers instead — a program drawing a flight across a hole in its tracker's coverage sets it |
@@ -105,6 +106,30 @@ FITACTIVITY_REAL_FIT="$HOME/activities/run.fit" go test ./...
 Its expectations pin one specific recording, so pointing it at a different
 activity fails rather than passes. That is deliberate: it is a regression pin,
 not a "can we read any FIT?" check.
+
+## Strava
+
+`strava` reads a user's own activities from Strava's API. Each user registers their own API
+application at <https://www.strava.com/settings/api>, with `localhost` as its Authorization
+Callback Domain, and gives its client id and secret in `~/.config/strava.yaml`:
+
+```yaml
+strava:
+  client_id: 12345
+  client_secret: 0123abcd...
+```
+
+or in `$STRAVA_CLIENT_ID` and `$STRAVA_CLIENT_SECRET`, or in a file `$STRAVA_CONFIG` names. Nothing
+is built in: a secret shipped in a program is nobody's secret, and an application's rate limits
+and athlete capacity are its own. The login's token is kept beside the credentials, in
+`strava-token.json`, for its owner alone, and refreshed under a lock so two programs do not spend
+the same refresh token.
+
+What Strava's [API Policy](https://www.strava.com/legal/api_policy) asks is kept here: answers are
+cached for a day under the system's cache directory and deleted once older; only the athlete's
+own activities are fetched; a rate limit reached is reported, never retried in a loop. The Policy
+also forbids using Strava data in operating an AI application, putting it into one's context
+included, so what this package fetches is not for a language model to read.
 
 ## License
 

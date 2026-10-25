@@ -201,6 +201,18 @@ func stravaSport(sportType, typ string) string {
 	return sportName(s)
 }
 
+// ReadStravaJSON reads Strava's JSON for an activity with its streams, as
+// Read reads one from a file, naming the Track's source as given: a
+// client of the API names it by the activity, "strava:1234567890", rather
+// than by wherever it keeps the answer.
+func ReadStravaJSON(data []byte, source string) (*Track, error) {
+	rec, err := readStrava(data)
+	if err != nil {
+		return nil, fmt.Errorf("reading %s: %w", source, err)
+	}
+	return rec.track(source)
+}
+
 // readStrava reads Strava's JSON for an activity with its streams beside it
 // -- RunGap's ".strava.json" export is one, and so is what a client of the
 // API keeps of an activity -- as a recording: a point per reading of the
