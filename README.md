@@ -137,6 +137,21 @@ own activities are fetched; a rate limit reached is reported, never retried in a
 also forbids using Strava data in operating an AI application, putting it into one's context
 included, so what this package fetches is not for a language model to read.
 
+## Weather
+
+`weather` is the weather an activity was done in, from [Open-Meteo](https://open-meteo.com/)'s
+archive: temperature, dew point, humidity, wind and gusts, surface pressure and sunlight, hourly,
+at a few places along the route -- one every 10 km -- in one request, and at any sample by
+interpolating between the hours. `Headings` gives each sample its direction of travel and
+`Relative` the wind as the athlete met it, head and cross.
+
+It is a model's weather: ECMWF's IFS at about 9 km for recent days, the ERA5 reanalysis at about
+25 km once it has caught up five days on, with the wind at 10 m in the open. Fetching sends the
+activity's area and hours to Open-Meteo, so a program does it only when its user asks; answers
+are kept under the system's cache directory, for good once the archive has settled. The data are
+CC BY 4.0, and `weather.Credit` belongs beside wherever they are shown. The free API is for
+non-commercial use.
+
 ## License
 
 Apache-2.0. See `LICENSE`, and `NOTICE` for third-party attribution.
