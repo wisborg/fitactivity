@@ -38,6 +38,13 @@ type Options struct {
 	// MinClimbGrade is the least a climb or a descent averages, as a
 	// fraction; 0 is DefaultMinClimbGrade.
 	MinClimbGrade float64
+	// Air, when not nil, is the air each sample i was run through: the
+	// wind against the runner at their height, in m/s (negative a
+	// tailwind), and its density, in kg/m³. A run's effort is then
+	// measured by its grade- and wind-adjusted speed, the speed on the
+	// flat in still air that costs the same. Nil is still air at sea
+	// level.
+	Air func(i int) (head, density float64, ok bool)
 }
 
 // Analysis is a workout's structure.
@@ -171,7 +178,7 @@ func Analyse(t *fitactivity.Track, opts Options) Analysis {
 		return a
 	}
 	elev := fitactivity.BuildElevationModel(t, opts.Elevation)
-	sig, effort := chooseSignal(t, opts.Power, elev)
+	sig, effort := chooseSignal(t, opts.Power, elev, opts.Air)
 	a.Signal = sig
 	a.Stops = findStops(t)
 	if sig != "" {

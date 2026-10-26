@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/wisborg/fitactivity"
+	"github.com/wisborg/fitactivity/effort"
 )
 
 var t0 = time.Date(2026, 1, 1, 6, 0, 0, 0, time.UTC)
@@ -313,5 +314,26 @@ func TestNoSetsInAHike(t *testing.T) {
 	run.Sport = "running"
 	if a := Analyse(run, Options{}); len(a.Sets) != 1 {
 		t.Errorf("the same stretches run, with standing recoveries, are %d sets, want 1", len(a.Sets))
+	}
+}
+
+// With the air each sample was run through, a run's effort is its grade-
+// and wind-adjusted speed: an out and back at one speed into a headwind
+// and home with it behind is two efforts, not one.
+func TestAnalyse_WindAdjusted(t *testing.T) {
+	tr := build("running", part{secs: 1200, speed: 3.2, noPow: true}, part{secs: 1200, speed: 3.2, noPow: true})
+	half := len(tr.Samples) / 2
+	air := func(i int) (float64, float64, bool) {
+		if i < half {
+			return 3, effort.SeaLevelDensity, true
+		}
+		return -3, effort.SeaLevelDensity, true
+	}
+	a := Analyse(tr, Options{Air: air})
+	if a.Signal != SignalWindAdjustedSpeed {
+		t.Fatalf("signal %q", a.Signal)
+	}
+	if len(a.Segments) < 2 || a.Segments[0].Effort <= a.Segments[len(a.Segments)-1].Effort {
+		t.Errorf("segments %+v", a.Segments)
 	}
 }

@@ -1,11 +1,11 @@
 package workout
 
 import (
-	"math"
 	"strings"
 	"time"
 
 	"github.com/wisborg/fitactivity"
+	"github.com/wisborg/fitactivity/effort"
 )
 
 // Signal is what a workout's effort is measured by.
@@ -19,6 +19,11 @@ const (
 	// effort where it records no power, which its speed alone misstates
 	// on every hill.
 	SignalGradeAdjustedSpeed Signal = "grade-adjusted speed"
+	// SignalWindAdjustedSpeed is grade-adjusted speed with the wind's
+	// cost in it too, in metres a second: the speed on the flat in still
+	// air that costs the same, where the air each sample was run through
+	// is known.
+	SignalWindAdjustedSpeed Signal = "grade- and wind-adjusted speed"
 	// SignalSpeed is speed, in metres a second.
 	SignalSpeed Signal = "speed"
 	// SignalHeartRate is heart rate, in beats a minute: the last resort,
@@ -37,7 +42,7 @@ const enough = 0.5
 // is effort; grade-adjusted speed is a runner's effort to within the
 // model's error, where there is elevation to adjust for; speed is a
 // rider's only on the flat and in still air; heart rate lags.
-func chooseSignal(t *fitactivity.Track, power fitactivity.PowerSource, elev *fitactivity.ElevationModel) (Signal, func(i int) (float64, bool)) {
+func chooseSignal(t *fitactivity.Track, power fitactivity.PowerSource, elev *fitactivity.ElevationModel, air func(int) (float64, float64, bool)) (Signal, func(i int) (float64, bool)) {
 	covers := func(read func(fitactivity.Sample) bool) bool {
 		n := 0
 		for _, s := range t.Samples {
@@ -52,12 +57,22 @@ func chooseSignal(t *fitactivity.Track, power fitactivity.PowerSource, elev *fit
 	}
 	hasSpeed := covers(func(s fitactivity.Sample) bool { return s.HasSpeed })
 	if hasSpeed && onFoot(t.Sport) && !elev.Empty() {
-		return SignalGradeAdjustedSpeed, func(i int) (float64, bool) {
+		sig := SignalGradeAdjustedSpeed
+		if air != nil {
+			sig = SignalWindAdjustedSpeed
+		}
+		return sig, func(i int) (float64, bool) {
 			s := t.Samples[i]
 			if !s.HasSpeed || !s.HasDistance {
 				return 0, false
 			}
-			return gradeAdjusted(s.Speed, elev.GradeAtDistance(s.Distance, gradeWindow)), true
+			grade := elev.GradeAtDistance(s.Distance, gradeWindow)
+			if air != nil {
+				if head, density, ok := air(i); ok {
+					return effort.Equivalent(s.Speed, grade, head, density), true
+				}
+			}
+			return gradeAdjusted(s.Speed, grade), true
 		}
 	}
 	if hasSpeed {
@@ -91,17 +106,11 @@ const gradeWindow = 25
 
 // gradeAdjusted is speed on grade as the speed on the flat that costs the
 // same, by Minetti and others' measure of the energy running costs on a
-// slope (Journal of Applied Physiology, 2002): a polynomial in the grade,
-// valid from -45% to +45%, outside which it is held at its ends.
+// slope: see effort.HillCost. The air's cost is left out, as it is the
+// same on the flat and the hill in still air but for the small difference
+// in speed.
 func gradeAdjusted(speed, grade float64) float64 {
-	return speed * runningCost(grade) / runningCost(0)
-}
-
-// runningCost is the energy running costs, in joules per kilogram per
-// metre, at grade (a fraction).
-func runningCost(grade float64) float64 {
-	i := math.Max(-0.45, math.Min(0.45, grade))
-	return 155.4*math.Pow(i, 5) - 30.4*math.Pow(i, 4) - 43.3*math.Pow(i, 3) + 46.3*i*i + 19.5*i + 3.6
+	return speed * effort.HillCost(grade) / effort.HillCost(0)
 }
 
 // Standing still is moving slower than stillSpeed for at least stillFor;

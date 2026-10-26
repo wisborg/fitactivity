@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/wisborg/fitactivity"
+	"github.com/wisborg/fitactivity/effort"
 )
 
 // Every place and value here is invented: a run near 10°N 20°E.
@@ -168,5 +169,73 @@ func TestSummarise(t *testing.T) {
 	s, ok := Summarise(r, tr)
 	if !ok || s.TemperatureMin != 16 || s.TemperatureMax != 18 || math.Abs(s.WindSpeed-4) > 1e-9 || math.Abs(s.WindFrom-350) > 0.01 || s.Gusts != 9 {
 		t.Errorf("summary %+v, %v", s, ok)
+	}
+}
+
+// outAndBack is a run north and back south at 3 m/s, half an hour each
+// way, in a steady northerly of 5 m/s.
+func outAndBack() (*fitactivity.Track, *Report) {
+	t := &fitactivity.Track{Sport: "running"}
+	lat := 10.0
+	for i := 0; i <= 3600; i++ {
+		if i > 0 {
+			if i <= 1800 {
+				lat += 3.0 / 111195
+			} else {
+				lat -= 3.0 / 111195
+			}
+		}
+		t.Samples = append(t.Samples, fitactivity.Sample{Time: t0.Add(time.Duration(i) * time.Second),
+			HasGPS: true, Lat: lat, Lon: 20, HasSpeed: true, Speed: 3})
+	}
+	var hours []Conditions
+	for h := -1; h <= 2; h++ {
+		hours = append(hours, Conditions{Time: t0.Add(time.Duration(h) * time.Hour), Temperature: 15, Pressure: 1013.25, WindSpeed: 5, WindFrom: 0})
+	}
+	return t, &Report{Places: []Place{{Lat: 10, Lon: 20, Hours: hours}}}
+}
+
+// The air is the headwind at the runner's height going out and the
+// tailwind coming back; over the whole run the wind costs time, since a
+// headwind costs more than the same tailwind gives back.
+func TestAirAndWindCost(t *testing.T) {
+	tr, r := outAndBack()
+	air := Air(r, tr, effort.Open)
+	if head, density, ok := air(900); !ok || math.Abs(head-3) > 0.01 || math.Abs(density-effort.SeaLevelDensity) > 0.002 {
+		t.Errorf("out: %v, %v, %v", head, density, ok)
+	}
+	if head, _, _ := air(2700); math.Abs(head+3) > 0.01 {
+		t.Errorf("back: %v", head)
+	}
+	flat := func(int) float64 { return 0 }
+	cost, ok := WindCost(r, tr, effort.Open, flat)
+	// By hand: out, the air at 6 m/s past the runner costs 7% more than
+	// still air, worth about 110 s over the half hour; back, with none
+	// past them, about 40 s is given back.
+	if !ok || cost < 50*time.Second || cost > 90*time.Second {
+		t.Errorf("cost %v, %v", cost, ok)
+	}
+}
+
+// A footpod's air power that rises running north says the wind is from the
+// north; one that hardly varies says nothing.
+func TestFootpodWind(t *testing.T) {
+	tr, _ := outAndBack()
+	for i := range tr.Samples {
+		ap := 1.0
+		if i <= 1800 {
+			ap = 4
+		}
+		tr.Samples[i].DevFields = map[string]float64{"Air Power": ap}
+	}
+	from, strength, ok := FootpodWind(tr)
+	if !ok || Apart(from, 0) > 5 || strength < 0.5 {
+		t.Errorf("windy: from %v, strength %v, %v", from, strength, ok)
+	}
+	for i := range tr.Samples {
+		tr.Samples[i].DevFields["Air Power"] = 2 + float64(i%2)*0.1
+	}
+	if _, _, ok := FootpodWind(tr); ok {
+		t.Error("a direction from a calm day")
 	}
 }

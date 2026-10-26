@@ -152,6 +152,16 @@ are kept under the system's cache directory, for good once the archive has settl
 CC BY 4.0, and `weather.Credit` belongs beside wherever they are shown. The free API is for
 non-commercial use.
 
+`effort` is what running costs by the energy it takes: on a hill by Minetti's measure, and
+against the air by Pugh's, the oxygen the air costs scaled to 0.0096 J/kg/m per (m/s)² of the
+air's speed past the runner -- di Prampero's figure, found another way. `Equivalent` is the speed
+on the flat in still air that costs the same, `StillAir` what the same effort would have gone
+without the wind. `weather.Air` gives each sample the wind at the runner's height -- the 10 m wind
+scaled by the logarithmic profile for open, suburban or urban ground -- and the air's density, for
+`workout.Options.Air`; `weather.WindCost` is the time the wind cost over a run; and
+`weather.FootpodWind` the direction a Stryd pod's air power says it blew from, as a check on the
+model's, since the pod senses the air at the shoe and its size is no wind speed at any height.
+
 ## License
 
 Apache-2.0. See `LICENSE`, and `NOTICE` for third-party attribution.
