@@ -154,3 +154,19 @@ func TestFetch_NoPositionAndRefusal(t *testing.T) {
 		t.Errorf("refused: %v", err)
 	}
 }
+
+// The summary spans the coolest to the warmest minute, and takes the wind's
+// direction from its vector.
+func TestSummarise(t *testing.T) {
+	srv, _ := fake(t, place(10, 20))
+	tr := run(time.Hour)
+	r, err := client(srv, "").Fetch(context.Background(), tr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Places[0].Hours = append(r.Places[0].Hours, Conditions{Time: t0.Add(time.Hour), Temperature: 18, DewPoint: 9, WindSpeed: 4, WindFrom: 350, Gusts: 9})
+	s, ok := Summarise(r, tr)
+	if !ok || s.TemperatureMin != 16 || s.TemperatureMax != 18 || math.Abs(s.WindSpeed-4) > 1e-9 || math.Abs(s.WindFrom-350) > 0.01 || s.Gusts != 9 {
+		t.Errorf("summary %+v, %v", s, ok)
+	}
+}

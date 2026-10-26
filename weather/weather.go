@@ -24,6 +24,8 @@ package weather
 import (
 	"math"
 	"time"
+
+	"github.com/wisborg/fitactivity"
 )
 
 // Credit is what is shown beside the data, as their licence asks, and
@@ -166,4 +168,55 @@ func bearing(lat0, lon0, lat1, lon1 float64) float64 {
 	y := math.Sin((lon1-lon0)*rad) * math.Cos(lat1*rad)
 	x := math.Cos(lat0*rad)*math.Sin(lat1*rad) - math.Sin(lat0*rad)*math.Cos(lat1*rad)*math.Cos((lon1-lon0)*rad)
 	return math.Mod(math.Atan2(y, x)/rad+360, 360)
+}
+
+// Summary is the weather over a whole activity: the coolest and warmest it
+// was, and on average the dew point, the wind and where it came from, the
+// strongest gust, and the sunlight.
+type Summary struct {
+	TemperatureMin, TemperatureMax float64
+	DewPoint, Humidity             float64
+	WindSpeed, WindFrom, Gusts     float64
+	Radiation                      float64
+}
+
+// Summarise is the weather over t, read once a minute along it. Without
+// any minute the report has weather for, there is none.
+func Summarise(r *Report, t *fitactivity.Track) (Summary, bool) {
+	var s Summary
+	var n, east, north float64
+	next := time.Time{}
+	for _, smp := range t.Samples {
+		if smp.Time.Before(next) {
+			continue
+		}
+		next = smp.Time.Add(time.Minute)
+		c, ok := r.At(smp.Lat, smp.Lon, smp.HasGPS, smp.Time)
+		if !ok {
+			continue
+		}
+		if n == 0 || c.Temperature < s.TemperatureMin {
+			s.TemperatureMin = c.Temperature
+		}
+		if n == 0 || c.Temperature > s.TemperatureMax {
+			s.TemperatureMax = c.Temperature
+		}
+		s.DewPoint += c.DewPoint
+		s.Humidity += c.Humidity
+		s.WindSpeed += c.WindSpeed
+		s.Radiation += c.Radiation
+		s.Gusts = math.Max(s.Gusts, c.Gusts)
+		e, no := toward(c.WindFrom)
+		east, north = east+e*c.WindSpeed, north+no*c.WindSpeed
+		n++
+	}
+	if n == 0 {
+		return Summary{}, false
+	}
+	s.DewPoint /= n
+	s.Humidity /= n
+	s.WindSpeed /= n
+	s.Radiation /= n
+	s.WindFrom = math.Mod(math.Atan2(east, north)*180/math.Pi+360, 360)
+	return s, true
 }
