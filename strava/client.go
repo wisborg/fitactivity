@@ -11,12 +11,17 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/wisborg/secrets"
 )
 
 // Client acts for the athlete a Token is for, with the application
 // Credentials name.
 type Client struct {
-	creds     Credentials
+	creds Credentials
+	// tokens is where the token is kept, and tokenPath where its lock
+	// is, beside where the file would be when the keychain keeps it.
+	tokens    secrets.Store
 	tokenPath string
 	cache     *Cache
 
@@ -65,16 +70,22 @@ const (
 	DefaultOAuth = "https://www.strava.com/oauth"
 )
 
-// New is a client for the application c, its token kept at TokenPath(c) and
-// its answers in cache, which may be nil to keep none.
+// New is a client for the application c, its token kept in the system's
+// keychain where one is used and at TokenPath(c) where not, and its answers
+// in cache, which may be nil to keep none.
 func New(c Credentials, cache *Cache) *Client {
-	return &Client{creds: c, tokenPath: TokenPath(c), cache: cache,
+	return &Client{creds: c, tokens: tokenStore(TokenPath(c)), tokenPath: TokenPath(c), cache: cache,
 		HTTP: &http.Client{Timeout: 60 * time.Second},
 		API:  DefaultAPI, OAuth: DefaultOAuth, Now: time.Now}
 }
 
-// TokenPath is where the client keeps its token.
-func (c *Client) TokenPath() string { return c.tokenPath }
+// TokenWhere is where the client keeps its token, for the user to read: a
+// file, or the keychain and the item in it.
+func (c *Client) TokenWhere() string { return c.tokens.Where(TokenName) }
+
+// LoadToken is the token as it is kept, not refreshed: what a login left,
+// for saying whose it is. ErrNotLoggedIn before any login.
+func (c *Client) LoadToken() (Token, error) { return loadToken(c.tokens) }
 
 // Cache is where the client keeps its answers, or nil.
 func (c *Client) Cache() *Cache { return c.cache }
@@ -141,7 +152,7 @@ func (c *Client) Exchange(ctx context.Context, code, scope string) (Token, error
 		return Token{}, err
 	}
 	defer unlock()
-	return t, SaveToken(c.tokenPath, t)
+	return t, saveToken(c.tokens, t)
 }
 
 // refreshMargin is how long before its expiry an access token is replaced:
@@ -179,17 +190,17 @@ func (c *Client) Token(ctx context.Context) (Token, error) {
 	if a.RefreshToken != "" {
 		t.RefreshToken = a.RefreshToken
 	}
-	return t, SaveToken(c.tokenPath, t)
+	return t, saveToken(c.tokens, t)
 }
 
 // loadToken reads the token and checks it is this application's.
 func (c *Client) loadToken() (Token, error) {
-	t, err := LoadToken(c.tokenPath)
+	t, err := loadToken(c.tokens)
 	if err != nil {
 		return t, err
 	}
 	if t.ClientID != c.creds.ClientID {
-		return Token{}, fmt.Errorf("the Strava login at %s is for another application (client id %s, not %s); log in again", c.tokenPath, t.ClientID, c.creds.ClientID)
+		return Token{}, fmt.Errorf("the Strava login in %s is for another application (client id %s, not %s); log in again", c.TokenWhere(), t.ClientID, c.creds.ClientID)
 	}
 	return t, nil
 }
@@ -216,7 +227,7 @@ func (c *Client) Logout(ctx context.Context) error {
 			}
 		}
 	}
-	if err := RemoveToken(c.tokenPath); err != nil {
+	if err := c.tokens.Delete(TokenName); err != nil {
 		return err
 	}
 	if revoke != nil {

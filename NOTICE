@@ -22,6 +22,26 @@ permission.
 
 
 -------------------------------------------------------------------------------
+Through github.com/wisborg/secrets
+-------------------------------------------------------------------------------
+
+The strava package reads its credentials and keeps its token through
+github.com/wisborg/secrets (Apache 2.0, by the same author), which is built
+on these; its NOTICE has them in full.
+
+  github.com/zalando/go-keyring  MIT; Copyright (c) 2016 Zalando SE.  It
+                             carries shellescape, MIT, Copyright (c) 2016
+                             Alessio Treglia.
+  github.com/danieljoos/wincred  MIT; Copyright (c) 2014 Daniel Joos.
+  github.com/godbus/dbus/v5  BSD 2-Clause; Copyright (c) 2013, Georg Reinke,
+                             Google.
+  golang.org/x/sys           BSD 3-Clause; Copyright 2009 The Go Authors.
+  go.yaml.in/yaml/v3         MIT and Apache 2.0; Copyright (c) 2011-2019
+                             Canonical Ltd; Copyright (c) 2006-2010 Kirill
+                             Simonov.
+
+
+-------------------------------------------------------------------------------
 The FIT protocol
 -------------------------------------------------------------------------------
 

@@ -16,7 +16,17 @@ import (
 	"time"
 
 	"github.com/wisborg/fitactivity"
+	"github.com/wisborg/secrets"
 )
+
+// The tests keep tokens in files, as on a system with no keychain, unless
+// one says otherwise; and the keychain they would reach is one in memory,
+// never the user's own.
+func TestMain(m *testing.M) {
+	secrets.MockKeychain(nil)
+	os.Setenv(secrets.EnvStore, "file")
+	os.Exit(m.Run())
+}
 
 // fake is a stand-in for Strava: its OAuth and the few API calls the client
 // makes, answering for one invented athlete with invented activities near
@@ -201,14 +211,14 @@ func loggedIn(t *testing.T, f *fake) *Client {
 func TestLogin_KeepsTheTokenForItsOwnerAlone(t *testing.T) {
 	f := newFake(t)
 	c := loggedIn(t, f)
-	tok, err := LoadToken(c.TokenPath())
+	tok, err := c.LoadToken()
 	if err != nil {
 		t.Fatal(err)
 	}
 	if tok.AthleteID != testAthlete || tok.AthleteName != "Ann Invented" || tok.RefreshToken != "refresh-1" || tok.ClientID != testClientID {
 		t.Errorf("token %+v", tok)
 	}
-	info, err := os.Stat(c.TokenPath())
+	info, err := os.Stat(c.tokenPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -250,7 +260,7 @@ func TestLogin_WithoutActivitiesIsRefused(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "reading activities") {
 		t.Fatalf("err %v", err)
 	}
-	if _, err := LoadToken(c.TokenPath()); !errors.Is(err, ErrNotLoggedIn) {
+	if _, err := c.LoadToken(); !errors.Is(err, ErrNotLoggedIn) {
 		t.Errorf("a token was kept: %v", err)
 	}
 }
@@ -276,7 +286,7 @@ func TestToken_RefreshedWhenItRunsOut(t *testing.T) {
 	if _, err := c.Details(context.Background(), testActivity); err != nil {
 		t.Fatal(err)
 	}
-	tok, _ := LoadToken(c.TokenPath())
+	tok, _ := c.LoadToken()
 	if f.called("refresh") != 1 || tok.RefreshToken != "refresh-2" || tok.AccessToken != "access-2" {
 		t.Errorf("refreshed %d times; token %+v", f.called("refresh"), tok)
 	}
@@ -285,7 +295,7 @@ func TestToken_RefreshedWhenItRunsOut(t *testing.T) {
 func TestToken_AnotherApplicationsLoginIsNotUsed(t *testing.T) {
 	f := newFake(t)
 	c := loggedIn(t, f)
-	other := New(Credentials{ClientID: "9999", ClientSecret: "x", Path: filepath.Join(filepath.Dir(c.TokenPath()), "strava.yaml")}, nil)
+	other := New(Credentials{ClientID: "9999", ClientSecret: "x", Path: filepath.Join(filepath.Dir(c.tokenPath), "strava.yaml")}, nil)
 	if _, err := other.Token(context.Background()); err == nil || !strings.Contains(err.Error(), "another application") {
 		t.Errorf("err %v", err)
 	}
@@ -380,7 +390,7 @@ func TestLogout_RevokesAndForgets(t *testing.T) {
 	if !f.revoked {
 		t.Error("not revoked on Strava")
 	}
-	if _, err := LoadToken(c.TokenPath()); !errors.Is(err, ErrNotLoggedIn) {
+	if _, err := c.LoadToken(); !errors.Is(err, ErrNotLoggedIn) {
 		t.Errorf("token kept: %v", err)
 	}
 	if n, _ := c.cache.Entries(testAthlete); n != 0 {
@@ -479,5 +489,81 @@ func TestRefresh_AsksOnceForEachAndKeepsTheNewAnswer(t *testing.T) {
 	}
 	if f.called("details") != 2 || f.called("streams") != 2 {
 		t.Errorf("details %d, streams %d after; want the refreshed answers from the cache", f.called("details"), f.called("streams"))
+	}
+}
+
+// Where the system has a keychain, the login's token is kept there and not
+// in a file.
+func TestLogin_KeptInTheKeychain(t *testing.T) {
+	t.Setenv(secrets.EnvStore, "")
+	f := newFake(t)
+	c := loggedIn(t, f)
+	defer c.tokens.Delete(TokenName)
+	if tok, err := c.LoadToken(); err != nil || tok.RefreshToken != "refresh-1" {
+		t.Fatalf("token %+v, %v", tok, err)
+	}
+	if _, err := os.Stat(c.tokenPath); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("a token file was written: %v", err)
+	}
+	if !strings.Contains(c.TokenWhere(), "wisborg/strava") {
+		t.Errorf("kept in %q", c.TokenWhere())
+	}
+	if err := c.Logout(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.LoadToken(); !errors.Is(err, ErrNotLoggedIn) {
+		t.Errorf("token kept after logout: %v", err)
+	}
+}
+
+// A token kept in strava-token.json before the keychain was is moved into
+// it at its first use, with no need to log in again.
+func TestToken_MovedIntoTheKeychain(t *testing.T) {
+	f := newFake(t)
+	c := loggedIn(t, f)
+	t.Setenv(secrets.EnvStore, "")
+	moved := New(c.creds, nil)
+	moved.API, moved.OAuth = c.API, c.OAuth
+	defer moved.tokens.Delete(TokenName)
+	if _, err := moved.Details(context.Background(), testActivity); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(c.tokenPath); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("token file kept: %v", err)
+	}
+	if v, _ := (secrets.Keychain{}).Get(TokenName); !strings.Contains(v, "refresh-1") {
+		t.Error("token not in the keychain")
+	}
+}
+
+// Secrets lists what the client uses, the token as the program's own.
+func TestSecrets(t *testing.T) {
+	t.Setenv(EnvConfig, "")
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	list, err := Secrets("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 3 || list[0].Name != ClientIDName || list[1].Name != ClientSecretName || list[2].Name != TokenName || !list[2].Kept || list[1].Kept {
+		t.Errorf("secrets %+v", list)
+	}
+}
+
+// The client id and secret may be in the keychain, with no file at all.
+func TestLoadCredentials_FromTheKeychain(t *testing.T) {
+	t.Setenv(secrets.EnvStore, "")
+	t.Setenv(EnvClientID, "")
+	t.Setenv(EnvClientSecret, "")
+	t.Setenv(EnvConfig, "")
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	for name, v := range map[string]string{ClientIDName: "4242", ClientSecretName: "s3cret"} {
+		if err := (secrets.Keychain{}).Set(name, v); err != nil {
+			t.Fatal(err)
+		}
+		defer secrets.Keychain{}.Delete(name)
+	}
+	c, err := LoadCredentials("")
+	if err != nil || c.ClientID != "4242" || c.ClientSecret != "s3cret" || c.Path != "" {
+		t.Errorf("credentials %+v, %v", c, err)
 	}
 }

@@ -119,11 +119,16 @@ strava:
   client_secret: 0123abcd...
 ```
 
-or in `$STRAVA_CLIENT_ID` and `$STRAVA_CLIENT_SECRET`, or in a file `$STRAVA_CONFIG` names. Nothing
-is built in: a secret shipped in a program is nobody's secret, and an application's rate limits
-and athlete capacity are its own. The login's token is kept beside the credentials, in
-`strava-token.json`, for its owner alone, and refreshed under a lock so two programs do not spend
-the same refresh token.
+or in `$STRAVA_CLIENT_ID` and `$STRAVA_CLIENT_SECRET`, in a file `$STRAVA_CONFIG` names, or in the
+system's keychain as `strava/client_id` and `strava/client_secret`. Nothing is built in: a secret
+shipped in a program is nobody's secret, and an application's rate limits and athlete capacity are
+its own. The login's token is kept in the system's keychain -- the macOS Keychain, the Windows
+Credential Manager, a Secret Service on Linux -- where one answers, and beside the credentials in
+`strava-token.json`, for its owner alone, where not; a token in that file from before is moved into
+the keychain at its first use. It is refreshed under a lock so two programs do not spend the same
+refresh token. All of these are read and kept through
+[secrets](https://github.com/wisborg/secrets), whose `$SECRETS_STORE=file` keeps the keychain out
+of it.
 
 What Strava's [API Policy](https://www.strava.com/legal/api_policy) asks is kept here: answers are
 cached for a day under the system's cache directory and deleted once older, and `Client.Refresh`

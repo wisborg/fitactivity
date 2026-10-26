@@ -2,7 +2,8 @@
 // programs built on fitactivity to read as they read a file.
 //
 // Each user registers their own API application with Strava and gives this
-// package its client id and secret; nothing is built in. The secret cannot
+// package its client id and secret -- in the environment, the system's
+// keychain or a file; see Secrets -- and nothing is built in. The secret cannot
 // be shipped in a program anybody can read, and an application's rate
 // limits and athlete capacity are its own, so one shared between users
 // would be everybody's quota and Strava's review to pass. See Credentials.
@@ -27,9 +28,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
-	"go.yaml.in/yaml/v3"
+	"github.com/wisborg/secrets"
 )
 
 // Credentials are a Strava API application's: the client id and secret
@@ -37,8 +37,8 @@ import (
 // https://www.strava.com/settings/api.
 type Credentials struct {
 	ClientID, ClientSecret string
-	// Path is the file they were read from, or empty when both came from
-	// the environment.
+	// Path is the file they were read from, or empty when neither came
+	// from one.
 	Path string
 	// Warning is a problem with the file worth telling the user that does
 	// not stop it being used: that others can read it.
@@ -85,56 +85,82 @@ func configDir() string {
 	return filepath.Join(home, ".config")
 }
 
-// credentialsFile is the file's shape:
+// The secrets the client uses, by the names package secrets knows them by:
+// in the keychain, the items client_id, client_secret and token of the
+// service wisborg/strava.
+const (
+	ClientIDName     = "strava/client_id"
+	ClientSecretName = "strava/client_secret"
+	TokenName        = "strava/token"
+)
+
+// Secrets are the secrets the client uses, each with where it is looked
+// for: the application's client id and secret in the environment, then the
+// system's keychain, then the file ConfigPath(path) names --
 //
 //	strava:
 //	  client_id: 12345
 //	  client_secret: 0123abcd...
-type credentialsFile struct {
-	Strava struct {
-		ClientID     yaml.Node `yaml:"client_id"`
-		ClientSecret string    `yaml:"client_secret"`
-	} `yaml:"strava"`
+//
+// -- and the login's token where package secrets keeps what a program is
+// handed itself: the keychain where there is one, strava-token.json beside
+// that file where not.
+func Secrets(path string) ([]secrets.Secret, error) {
+	file, err := ConfigPath(path)
+	if err != nil {
+		return nil, err
+	}
+	creds := secrets.MappingFile{Path: file,
+		Keys: map[string][]string{ClientIDName: {"strava.client_id"}, ClientSecretName: {"strava.client_secret"}},
+		// The usual file need not be there when the environment or the
+		// keychain has both; one named, by path or $STRAVA_CONFIG, must.
+		Optional: path == "" && os.Getenv(EnvConfig) == ""}
+	env := secrets.Env{ClientIDName: EnvClientID, ClientSecretName: EnvClientSecret}
+	chain := secrets.Chain{env, secrets.Keychain{}, creds}
+	return []secrets.Secret{
+		{Name: ClientIDName, About: "client id of your Strava API application", Sources: chain},
+		{Name: ClientSecretName, About: "client secret of your Strava API application", Sources: chain},
+		{Name: TokenName, About: "your Strava login, kept by \"strava login\"", Kept: true,
+			Sources: secrets.Chain{tokenStore(filepath.Join(filepath.Dir(file), tokenFile))}},
+	}, nil
 }
 
-// LoadCredentials reads the application's client id and secret from the
-// file ConfigPath(path) names, with $STRAVA_CLIENT_ID and
-// $STRAVA_CLIENT_SECRET over it. A file that is not there is no error when
-// the environment gives both; one that is there but unreadable or
-// malformed always is.
+// LoadCredentials is the application's client id and secret, from wherever
+// Secrets(path) says they are looked for. A file that is there but is not
+// a mapping is an error even when the environment gives both.
 func LoadCredentials(path string) (Credentials, error) {
-	file, err := ConfigPath(path)
+	list, err := Secrets(path)
 	if err != nil {
 		return Credentials{}, err
 	}
 	var c Credentials
-	data, err := os.ReadFile(file)
-	switch {
-	case err == nil:
-		var f credentialsFile
-		if err := yaml.Unmarshal(data, &f); err != nil {
-			return Credentials{}, fmt.Errorf("reading %s: %w", file, err)
+	missing := false
+	for _, s := range list[:2] {
+		v, _, err := s.Get()
+		if errors.Is(err, secrets.ErrNotFound) {
+			missing = true
+			continue
 		}
-		c.ClientID = strings.TrimSpace(f.Strava.ClientID.Value)
-		c.ClientSecret = strings.TrimSpace(f.Strava.ClientSecret)
-		c.Path = file
-		if info, err := os.Stat(file); err == nil && info.Mode().Perm()&0o077 != 0 {
-			c.Warning = fmt.Sprintf("%s can be read by others (mode %v); it holds a secret, so chmod 600 it", file, info.Mode().Perm())
+		if err != nil {
+			return Credentials{}, err
 		}
-	case errors.Is(err, os.ErrNotExist) && path == "" && os.Getenv(EnvConfig) == "":
-	default:
-		return Credentials{}, fmt.Errorf("reading %s: %w", file, err)
+		if s.Name == ClientIDName {
+			c.ClientID = v
+		} else {
+			c.ClientSecret = v
+		}
 	}
-	if v := os.Getenv(EnvClientID); v != "" {
-		c.ClientID = v
+	// The token is kept beside the file, there whether or not it gave
+	// these, as Secrets says it is.
+	file, _ := ConfigPath(path)
+	if _, err := os.Stat(file); err == nil {
+		f := secrets.MappingFile{Path: file}
+		c.Path, c.Warning = file, f.Warning()
 	}
-	if v := os.Getenv(EnvClientSecret); v != "" {
-		c.ClientSecret = v
-	}
-	if c.ClientID == "" || c.ClientSecret == "" {
+	if missing {
 		return Credentials{}, fmt.Errorf("%w: register one at https://www.strava.com/settings/api with \"localhost\" as its Authorization Callback Domain, "+
-			"then put its client id and secret in %s as strava.client_id and strava.client_secret, or in $%s and $%s",
-			ErrNoCredentials, file, EnvClientID, EnvClientSecret)
+			"then put its client id and secret in %s as strava.client_id and strava.client_secret, in $%s and $%s, or in %s as %s and %s",
+			ErrNoCredentials, file, EnvClientID, EnvClientSecret, secrets.KeychainName(), ClientIDName, ClientSecretName)
 	}
 	return c, nil
 }

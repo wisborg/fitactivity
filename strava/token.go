@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/wisborg/secrets"
 )
 
 // Token is what a login leaves: the athlete who allowed the application in,
@@ -34,75 +36,73 @@ type Token struct {
 // logout.
 var ErrNotLoggedIn = errors.New("not logged in to Strava")
 
-// TokenPath is where the token for credentials c is kept: beside the file
-// the credentials came from, or in ~/.config when they came from the
-// environment. The token is the program's to write, so it is a file of its
+// tokenFile is the file the token is kept in where the keychain is not
+// used, beside the credentials file.
+const tokenFile = "strava-token.json"
+
+// TokenPath is where the token for credentials c is kept where the
+// keychain is not used, and where its lock is kept either way: beside the
+// file the credentials came from, or in ~/.config when they came from
+// elsewhere. The token is the program's to write, so it is a file of its
 // own rather than a change to the user's.
 func TokenPath(c Credentials) string {
 	dir := configDir()
 	if c.Path != "" {
 		dir = filepath.Dir(c.Path)
 	}
-	return filepath.Join(dir, "strava-token.json")
+	return filepath.Join(dir, tokenFile)
 }
 
-// LoadToken reads the token at path. A path with nothing there is
-// ErrNotLoggedIn.
+// tokenStore is where the token is kept: the system's keychain where one
+// is used, the file at path where not.
+func tokenStore(path string) secrets.Store {
+	return secrets.Kept(secrets.File{Path: path, Name: TokenName})
+}
+
+// LoadToken reads the token in the file at path. A path with nothing there
+// is ErrNotLoggedIn.
 func LoadToken(path string) (Token, error) {
-	data, err := os.ReadFile(path)
-	if errors.Is(err, os.ErrNotExist) {
+	return loadToken(secrets.File{Path: path, Name: TokenName})
+}
+
+// SaveToken writes t to the file at path, for its owner alone.
+func SaveToken(path string, t Token) error {
+	return saveToken(secrets.File{Path: path, Name: TokenName}, t)
+}
+
+// RemoveToken deletes the token in the file at path; one that is not there
+// is already gone.
+func RemoveToken(path string) error {
+	return secrets.File{Path: path, Name: TokenName}.Delete(TokenName)
+}
+
+// loadToken reads the token in s. None there is ErrNotLoggedIn.
+func loadToken(s secrets.Store) (Token, error) {
+	data, err := s.Get(TokenName)
+	if errors.Is(err, secrets.ErrNotFound) {
 		return Token{}, ErrNotLoggedIn
 	}
 	if err != nil {
 		return Token{}, err
 	}
 	var t Token
-	if err := json.Unmarshal(data, &t); err != nil {
-		return Token{}, fmt.Errorf("reading %s: %w", path, err)
+	if err := json.Unmarshal([]byte(data), &t); err != nil {
+		// json's error can quote what it failed on, which is the token.
+		return Token{}, fmt.Errorf("reading the Strava token in %s: it is not a token", s.Where(TokenName))
 	}
 	if t.RefreshToken == "" {
-		return Token{}, fmt.Errorf("reading %s: it holds no refresh token", path)
+		return Token{}, fmt.Errorf("reading the Strava token in %s: it holds no refresh token", s.Where(TokenName))
 	}
 	return t, nil
 }
 
-// SaveToken writes t to path for its owner alone, whole or not at all: to a
-// file beside it first, renamed over it, so a crash part-way leaves the
-// token it had rather than half of the new one.
-func SaveToken(path string, t Token) error {
+// saveToken keeps t in s.
+func saveToken(s secrets.Store, t Token) error {
 	data, err := json.MarshalIndent(t, "", "  ")
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return err
-	}
-	f, err := os.CreateTemp(filepath.Dir(path), ".strava-token-*")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(f.Name())
-	if err := f.Chmod(0o600); err != nil {
-		f.Close()
-		return err
-	}
-	if _, err := f.Write(append(data, '\n')); err != nil {
-		f.Close()
-		return err
-	}
-	if err := f.Close(); err != nil {
-		return err
-	}
-	return os.Rename(f.Name(), path)
-}
-
-// RemoveToken deletes the token at path; one that is not there is already
-// gone.
-func RemoveToken(path string) error {
-	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-	return nil
+	return s.Set(TokenName, string(append(data, '\n')))
 }
 
 // lockToken holds the lock beside the token at path until the returned
