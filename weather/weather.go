@@ -88,6 +88,24 @@ func (r *Report) At(lat, lon float64, hasPos bool, t time.Time) (Conditions, boo
 	return p.at(t)
 }
 
+// ElevationAt is the height of the model's ground at the place nearest
+// lat, lon -- the first without a position -- in metres.
+func (r *Report) ElevationAt(lat, lon float64, hasPos bool) (float64, bool) {
+	if r == nil || len(r.Places) == 0 {
+		return 0, false
+	}
+	p := &r.Places[0]
+	if hasPos {
+		best := math.Inf(1)
+		for i := range r.Places {
+			if d := greatCircle(lat, lon, r.Places[i].Lat, r.Places[i].Lon); d < best {
+				best, p = d, &r.Places[i]
+			}
+		}
+	}
+	return p.Elevation, true
+}
+
 // at interpolates the place's hours at t. The wind's direction is taken
 // from its vector, so a wind backing from 350° to 10° passes through north
 // rather than south; its speed is interpolated as a speed, since averaging

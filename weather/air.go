@@ -110,3 +110,72 @@ func Apart(a, b float64) float64 {
 	d := math.Mod(math.Abs(a-b), 360)
 	return math.Min(d, 360-d)
 }
+
+// HeatCost is the time the heat, or the cold, cost over t by the report,
+// for a runner not acclimatised to it: each moving second slower by the
+// share effort.HeatLoss gives for the WBGT then, from the temperature and
+// humidity. lo and hi are the coolest and warmest WBGT met; ok is false
+// where no moving sample had weather.
+func HeatCost(r *Report, t *fitactivity.Track) (cost time.Duration, lo, hi float64, ok bool) {
+	var secs float64
+	for i := 1; i < len(t.Samples); i++ {
+		s := t.Samples[i]
+		dt := s.Time.Sub(t.Samples[i-1].Time).Seconds()
+		if !s.HasSpeed || s.Speed < 1 || dt <= 0 || dt > 10 {
+			continue
+		}
+		c, has := r.At(s.Lat, s.Lon, s.HasGPS, s.Time)
+		if !has {
+			continue
+		}
+		w := effort.WBGT(c.Temperature, c.Humidity)
+		if !ok || w < lo {
+			lo = w
+		}
+		if !ok || w > hi {
+			hi = w
+		}
+		ok = true
+		secs += dt * effort.HeatLoss(w)
+	}
+	return time.Duration(secs * float64(time.Second)), lo, hi, ok
+}
+
+// AltitudeCost is the time the altitude cost over t, for a runner not
+// acclimatised to it: each moving second slower than the same share of
+// their oxygen uptake would have run at sea level, at the sample's own
+// elevation -- the report's ground where the track records none -- in the
+// air the report gives, on grade(i). highest is the highest point; ok is
+// false where no moving sample had a height.
+func AltitudeCost(r *Report, t *fitactivity.Track, exposure effort.Exposure, grade func(i int) float64) (cost time.Duration, highest float64, ok bool) {
+	air := Air(r, t, exposure)
+	var secs float64
+	for i := 1; i < len(t.Samples); i++ {
+		s := t.Samples[i]
+		dt := s.Time.Sub(t.Samples[i-1].Time).Seconds()
+		if !s.HasSpeed || s.Speed < 1 || dt <= 0 || dt > 10 {
+			continue
+		}
+		h, has := s.Elevation, s.HasElevation
+		if !has {
+			h, has = r.ElevationAt(s.Lat, s.Lon, s.HasGPS)
+		}
+		if !has {
+			continue
+		}
+		if !ok || h > highest {
+			highest = h
+		}
+		ok = true
+		loss := effort.AltitudeLoss(h)
+		if loss <= 0 {
+			continue
+		}
+		head, density, hasAir := air(i)
+		if !hasAir {
+			head, density = 0, effort.SeaLevelDensity
+		}
+		secs += dt * (1 - s.Speed/effort.AtSeaLevel(s.Speed, grade(i), head, density, loss))
+	}
+	return time.Duration(secs * float64(time.Second)), highest, ok
+}

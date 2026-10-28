@@ -65,3 +65,35 @@ func TestAirDensity(t *testing.T) {
 		t.Errorf("standard atmosphere: %v", d)
 	}
 }
+
+// The formula by hand: at 30 °C the saturated vapour pressure is 6.105 ·
+// exp(17.27 · 30 / 267.7) = 42.3 hPa, at 70% 29.6 hPa, so 0.567 · 30 +
+// 0.393 · 29.6 + 3.94 = 32.6; at 25 °C and 50%, 15.8 hPa and 24.3; at
+// 10 °C and 80%, 9.8 hPa and 13.5.
+func TestWBGT(t *testing.T) {
+	for _, c := range []struct{ t, rh, want float64 }{{25, 50, 24.3}, {30, 70, 32.6}, {10, 80, 13.5}} {
+		if got := WBGT(c.t, c.rh); !near(got, c.want, 0.1) {
+			t.Errorf("%v °C, %v%%: %v, want %v", c.t, c.rh, got, c.want)
+		}
+	}
+}
+
+func TestHeatLoss(t *testing.T) {
+	if HeatLoss(10) != 0 || !near(HeatLoss(20), 0.02, 1e-9) || !near(HeatLoss(2.5), 0.015, 1e-9) {
+		t.Errorf("10: %v, 20: %v, 2.5: %v", HeatLoss(10), HeatLoss(20), HeatLoss(2.5))
+	}
+}
+
+// At 1,300 m a runner has lost 6.3% of their oxygen uptake, and the same
+// effort at sea level is faster; below 300 m nothing changes.
+func TestAltitude(t *testing.T) {
+	if l := AltitudeLoss(1300); !near(l, 0.063, 1e-9) || AltitudeLoss(200) != 0 {
+		t.Errorf("1300 m: %v, 200 m: %v", l, AltitudeLoss(200))
+	}
+	if u := AtSeaLevel(3, 0, 0, 1.08, AltitudeLoss(1300)); u <= 3*1.05 || u >= 3*1.08 {
+		t.Errorf("at sea level: %v", u)
+	}
+	if u := AtSeaLevel(3, 0, 0, SeaLevelDensity, 0); u != 3 {
+		t.Errorf("no loss: %v", u)
+	}
+}

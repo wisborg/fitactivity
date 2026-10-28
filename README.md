@@ -162,6 +162,16 @@ scaled by the logarithmic profile for open, suburban or urban ground -- and the 
 `weather.FootpodWind` the direction a Stryd pod's air power says it blew from, as a check on the
 model's, since the pod senses the air at the shoe and its size is no wind speed at any height.
 
+Heat and altitude are in `effort` too. Heat by the wet-bulb globe temperature, estimated from the
+temperature and humidity (the Australian Bureau of Meteorology's approximation, for moderate sun and
+a light wind), and Mantzios and others' 2022 analysis of 1,258 elite races: best between 7.5 and
+15 °C WBGT, 0.4% of speed lost each degree warmer and 0.3% each degree cooler. Altitude by the
+oxygen uptake lost above 300 m, 6.3% a thousand metres (Wehrlin and Hallén, 2006): the same effort
+is that much larger a share of what can be sustained, while the thinner air's help is kept in the
+air's cost. Both are for a runner not acclimatised; nothing published says by how much
+acclimatisation reduces them. `weather.HeatCost` and `weather.AltitudeCost` are what each cost over
+a run.
+
 ## License
 
 Apache-2.0. See `LICENSE`, and `NOTICE` for third-party attribution.

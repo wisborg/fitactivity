@@ -239,3 +239,26 @@ func TestFootpodWind(t *testing.T) {
 		t.Error("a direction from a calm day")
 	}
 }
+
+// An hour at 25 °C and 50% -- WBGT 24.3, 9.3 above the best -- costs 3.7%
+// of it; the same run at 1,300 m costs about 6% more on top.
+func TestHeatAndAltitudeCost(t *testing.T) {
+	tr, r := outAndBack()
+	for i := range r.Places[0].Hours {
+		r.Places[0].Hours[i].Temperature, r.Places[0].Hours[i].Humidity = 25, 50
+		r.Places[0].Hours[i].WindSpeed = 0
+	}
+	cost, lo, hi, ok := HeatCost(r, tr)
+	if !ok || math.Abs(lo-24.3) > 0.1 || math.Abs(hi-lo) > 1e-9 || math.Abs(cost.Seconds()-3600*0.004*9.3) > 3 {
+		t.Errorf("heat: %v, %v-%v, %v", cost, lo, hi, ok)
+	}
+	flat := func(int) float64 { return 0 }
+	if cost, highest, ok := AltitudeCost(r, tr, effort.Suburban, flat); !ok || cost != 0 || highest != 0 {
+		t.Errorf("sea level: %v, %v, %v", cost, highest, ok)
+	}
+	r.Places[0].Elevation = 1300
+	cost, highest, ok := AltitudeCost(r, tr, effort.Suburban, flat)
+	if !ok || highest != 1300 || cost < 3*time.Minute || cost > 5*time.Minute {
+		t.Errorf("1300 m: %v, %v, %v", cost, highest, ok)
+	}
+}

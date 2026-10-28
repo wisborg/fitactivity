@@ -133,3 +133,77 @@ const (
 	// a street along the wind can funnel far more.
 	Urban Exposure = 0.25
 )
+
+// WBGT is the wet-bulb globe temperature, in °C, the heat stress index
+// race performance has been measured against, from the air's temperature
+// (°C) and relative humidity (%), by the Australian Bureau of
+// Meteorology's approximation: 0.567 T + 0.393 e + 3.94, with e the water
+// vapour pressure in hPa. It assumes moderate sunshine and a light wind;
+// full sun in still air is hotter, shade and a breeze cooler. A globe's
+// own temperature, which the sun's and the wind's effects come through,
+// is not in a forecast, and a model of it would add more precision than
+// the per-degree figures it feeds have.
+func WBGT(temperature, humidity float64) float64 {
+	e := humidity / 100 * 6.105 * math.Exp(17.27*temperature/(237.7+temperature))
+	return 0.567*temperature + 0.393*e + 3.94
+}
+
+// The WBGT range peak performance is likeliest in, and how much is lost
+// each degree outside it, as fractions of speed: Mantzios and others'
+// analysis of 1,258 elite races in 42 countries (International Journal of
+// Environmental Research and Public Health, 2022), over all the distances
+// from 5,000 m to the 50 km walk. Their marathon alone lost half as much,
+// 0.2% a degree hotter, and Ely and others found slower runners lose more
+// than elite ones; the all-event figure is between. None of the runners'
+// acclimatisation was known.
+const (
+	CoolestBest = 7.5   // °C WBGT
+	WarmestBest = 15.0  // °C WBGT
+	HeatLossPer = 0.004 // a degree warmer
+	ColdLossPer = 0.003 // a degree cooler
+)
+
+// HeatLoss is the share of speed the heat, or the cold, costs at wbgt,
+// for a runner not acclimatised to it: nothing within the best range.
+func HeatLoss(wbgt float64) float64 {
+	switch {
+	case wbgt > WarmestBest:
+		return HeatLossPer * (wbgt - WarmestBest)
+	case wbgt < CoolestBest:
+		return ColdLossPer * (CoolestBest - wbgt)
+	}
+	return 0
+}
+
+// AltitudeThreshold is the height, in metres, above which maximal oxygen
+// uptake falls, and AltitudeLossPer how much of it a metre higher: 6.3%
+// a thousand metres, measured on trained runners in a hypobaric chamber
+// from 300 to 2,800 m by Wehrlin and Hallén (European Journal of Applied
+// Physiology, 2006) -- on arrival, before any acclimatisation, which wins
+// part of it back over weeks.
+const (
+	AltitudeThreshold = 300.0
+	AltitudeLossPer   = 0.063 / 1000
+)
+
+// AltitudeLoss is the share of maximal oxygen uptake lost at height h, in
+// metres: nothing below AltitudeThreshold.
+func AltitudeLoss(h float64) float64 {
+	return math.Max(0, AltitudeLossPer*(h-AltitudeThreshold))
+}
+
+// AtSeaLevel is the speed that, with the oxygen uptake lost at altitude
+// back, is the same share of what the runner can sustain as speed on grade
+// into head through air of density was: the energy a second scaled up by
+// the uptake lost, run in the same air. The air's density is kept, so
+// thinner air's help is not taken away with the oxygen's hindrance.
+func AtSeaLevel(speed, grade, head, density, loss float64) float64 {
+	if speed <= 0 || loss <= 0 || loss >= 1 {
+		return speed
+	}
+	power := Cost(speed, grade, head, density) * speed / (1 - loss)
+	if power <= 0 {
+		return speed
+	}
+	return solve(func(u float64) float64 { return Cost(u, grade, head, density) * u }, power)
+}
