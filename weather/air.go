@@ -2,6 +2,7 @@ package weather
 
 import (
 	"math"
+	"sort"
 	"time"
 
 	"github.com/wisborg/fitactivity"
@@ -54,6 +55,35 @@ func WindCost(r *Report, t *fitactivity.Track, exposure effort.Exposure, grade f
 		ok = true
 	}
 	return time.Duration(cost * float64(time.Second)), ok
+}
+
+// WindPace is how much the wind cost on the pace at its worst and gave at
+// its best over t, in seconds a metre: the still-air pace for the same
+// effort less the pace run, positive into the wind and negative with it
+// behind. Not the extremes of single seconds, which a corner's heading or
+// a gust's second set, but the 95th and 5th percentiles of the moving
+// seconds that had weather and a heading; with no tailwind ever, best is
+// still the smallest cost. ok is false where none had.
+func WindPace(r *Report, t *fitactivity.Track, exposure effort.Exposure, grade func(i int) float64) (worst, best float64, ok bool) {
+	air := Air(r, t, exposure)
+	var costs []float64
+	for i, s := range t.Samples {
+		if !s.HasSpeed || s.Speed < 1 {
+			continue
+		}
+		head, density, has := air(i)
+		if !has {
+			continue
+		}
+		still := effort.StillAir(s.Speed, grade(i), head, density)
+		costs = append(costs, 1/s.Speed-1/still)
+	}
+	if len(costs) == 0 {
+		return 0, 0, false
+	}
+	sort.Float64s(costs)
+	at := func(q float64) float64 { return costs[int(q*float64(len(costs)-1)+0.5)] }
+	return at(0.95), at(0.05), true
 }
 
 // FootpodWind is the wind a Stryd footpod's air power says the runner met:

@@ -208,6 +208,13 @@ func TestAirAndWindCost(t *testing.T) {
 		t.Errorf("back: %v", head)
 	}
 	flat := func(int) float64 { return 0 }
+	// Out into 3 m/s at 3 m/s: still air would have gone about 3.2 m/s for
+	// the effort, 21 s/km quicker; back with it, about 2.93 m/s, 8 s/km
+	// slower.
+	worst, best, ok := WindPace(r, tr, effort.Open, flat)
+	if !ok || math.Abs(worst*1000-21) > 3 || math.Abs(best*1000+8) > 2 {
+		t.Errorf("pace: worst %.1f s/km, best %.1f s/km, %v", worst*1000, best*1000, ok)
+	}
 	cost, ok := WindCost(r, tr, effort.Open, flat)
 	// By hand: out, the air at 6 m/s past the runner costs 7% more than
 	// still air, worth about 110 s over the half hour; back, with none
