@@ -66,15 +66,17 @@ func TestAirDensity(t *testing.T) {
 	}
 }
 
-// The formula by hand: at 30 °C the saturated vapour pressure is 6.105 ·
-// exp(17.27 · 30 / 267.7) = 42.3 hPa, at 70% 29.6 hPa, so 0.567 · 30 +
-// 0.393 · 29.6 + 3.94 = 32.6; at 25 °C and 50%, 15.8 hPa and 24.3; at
-// 10 °C and 80%, 9.8 hPa and 13.5.
+// Stull's own example: 20 °C at 50% is a wet bulb of 13.7 °C, so a shade
+// WBGT of 0.7 · 13.7 + 0.3 · 20 = 15.6; air saturated is its own wet bulb.
 func TestWBGT(t *testing.T) {
-	for _, c := range []struct{ t, rh, want float64 }{{25, 50, 24.3}, {30, 70, 32.6}, {10, 80, 13.5}} {
-		if got := WBGT(c.t, c.rh); !near(got, c.want, 0.1) {
-			t.Errorf("%v °C, %v%%: %v, want %v", c.t, c.rh, got, c.want)
-		}
+	if w := WetBulb(20, 50); !near(w, 13.7, 0.1) {
+		t.Errorf("wet bulb at 20 °C, 50%%: %v", w)
+	}
+	if w := WBGT(20, 50); !near(w, 15.6, 0.1) {
+		t.Errorf("WBGT at 20 °C, 50%%: %v", w)
+	}
+	if w := WBGT(24, 99); !near(w, 24, 0.3) {
+		t.Errorf("WBGT at 24 °C, 99%%: %v", w)
 	}
 }
 

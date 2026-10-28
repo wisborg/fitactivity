@@ -134,18 +134,32 @@ const (
 	Urban Exposure = 0.25
 )
 
-// WBGT is the wet-bulb globe temperature, in °C, the heat stress index
-// race performance has been measured against, from the air's temperature
-// (°C) and relative humidity (%), by the Australian Bureau of
-// Meteorology's approximation: 0.567 T + 0.393 e + 3.94, with e the water
-// vapour pressure in hPa. It assumes moderate sunshine and a light wind;
-// full sun in still air is hotter, shade and a breeze cooler. A globe's
-// own temperature, which the sun's and the wind's effects come through,
-// is not in a forecast, and a model of it would add more precision than
-// the per-degree figures it feeds have.
+// WBGT is the wet-bulb globe temperature in the shade, in °C, the heat
+// stress index race performance has been measured against, from the air's
+// temperature (°C) and relative humidity (%): 0.7 of the natural wet-bulb
+// temperature and 0.3 of the air's, a black globe out of the sun being at
+// the air's temperature. The sun's own heat is not in it -- a globe in
+// sunshine is warmer than the air, by how much depending on the sun's
+// height, the cloud and the wind, none of which a forecast's hourly
+// figures settle well enough to be worth the model -- so a run in full sun
+// was hotter than this says, and one at dawn, at dusk or under cloud about
+// as hot.
+//
+// The Australian Bureau of Meteorology's approximation, 0.567 T + 0.393 e
+// + 3.94, assumes moderate sunshine at every hour: at night at 24 °C and
+// 98% it says 29 °C where the shade's is 24.
 func WBGT(temperature, humidity float64) float64 {
-	e := humidity / 100 * 6.105 * math.Exp(17.27*temperature/(237.7+temperature))
-	return 0.567*temperature + 0.393*e + 3.94
+	return 0.7*WetBulb(temperature, humidity) + 0.3*temperature
+}
+
+// WetBulb is the wet-bulb temperature, in °C, at temperature (°C) and
+// relative humidity (%), by Stull's empirical fit (Journal of Applied
+// Meteorology and Climatology, 2011): within a degree from 5 to 99%
+// humidity and -20 to 50 °C, at sea level's pressure.
+func WetBulb(temperature, humidity float64) float64 {
+	t, rh := temperature, math.Max(5, math.Min(99, humidity))
+	return t*math.Atan(0.151977*math.Sqrt(rh+8.313659)) + math.Atan(t+rh) - math.Atan(rh-1.676331) +
+		0.00391838*math.Pow(rh, 1.5)*math.Atan(0.023101*rh) - 4.686035
 }
 
 // The WBGT range peak performance is likeliest in, and how much is lost

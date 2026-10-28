@@ -240,8 +240,9 @@ func TestFootpodWind(t *testing.T) {
 	}
 }
 
-// An hour at 25 °C and 50% -- WBGT 24.3, 9.3 above the best -- costs 3.7%
-// of it; the same run at 1,300 m costs about 6% more on top.
+// An hour at 25 °C and 50% -- a shade WBGT of 0.7 · 18.0 + 0.3 · 25 =
+// 20.1, 5.1 above the best -- costs 2.0% of it; the same run at 1,300 m
+// costs about 6% more on top.
 func TestHeatAndAltitudeCost(t *testing.T) {
 	tr, r := outAndBack()
 	for i := range r.Places[0].Hours {
@@ -249,7 +250,7 @@ func TestHeatAndAltitudeCost(t *testing.T) {
 		r.Places[0].Hours[i].WindSpeed = 0
 	}
 	cost, lo, hi, ok := HeatCost(r, tr)
-	if !ok || math.Abs(lo-24.3) > 0.1 || math.Abs(hi-lo) > 1e-9 || math.Abs(cost.Seconds()-3600*0.004*9.3) > 3 {
+	if !ok || math.Abs(lo-20.1) > 0.15 || math.Abs(hi-lo) > 1e-9 || math.Abs(cost.Seconds()-3600*0.004*(lo-15)) > 3 {
 		t.Errorf("heat: %v, %v-%v, %v", cost, lo, hi, ok)
 	}
 	flat := func(int) float64 { return 0 }
