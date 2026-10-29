@@ -190,16 +190,27 @@ func bearing(lat0, lon0, lat1, lon1 float64) float64 {
 
 // Summary is the weather over a whole activity: the coolest and warmest it
 // was, and on average the dew point, the wind and where it came from, the
-// strongest gust, and the sunlight.
+// strongest gust, and the sunlight; and, since over a marathon or a long
+// ride the averages hide a day that warmed or a wind that turned, the
+// weather at its start and end, and how steady the wind's direction was.
 type Summary struct {
 	TemperatureMin, TemperatureMax float64
 	DewPoint, Humidity             float64
 	WindSpeed, WindFrom, Gusts     float64
 	Radiation                      float64
+	// Start and End are the weather at the first and last minute the
+	// report has any for, where the athlete was then.
+	Start, End Conditions
+	// WindSteadiness is how much of the wind kept to one direction: the
+	// speed of the average wind, as a vector, over its average speed. It is
+	// 1 for a wind that never turned and near 0 for one that blew as much
+	// one way as the other, where WindFrom means little.
+	WindSteadiness float64
 }
 
-// Summarise is the weather over t, read once a minute along it. Without
-// any minute the report has weather for, there is none.
+// Summarise is the weather over t, read once a minute along it, each
+// minute where the athlete was then. Without any minute the report has
+// weather for, there is none.
 func Summarise(r *Report, t *fitactivity.Track) (Summary, bool) {
 	var s Summary
 	var n, east, north float64
@@ -213,6 +224,10 @@ func Summarise(r *Report, t *fitactivity.Track) (Summary, bool) {
 		if !ok {
 			continue
 		}
+		if n == 0 {
+			s.Start = c
+		}
+		s.End = c
 		if n == 0 || c.Temperature < s.TemperatureMin {
 			s.TemperatureMin = c.Temperature
 		}
@@ -236,5 +251,8 @@ func Summarise(r *Report, t *fitactivity.Track) (Summary, bool) {
 	s.WindSpeed /= n
 	s.Radiation /= n
 	s.WindFrom = math.Mod(math.Atan2(east, north)*180/math.Pi+360, 360)
+	if s.WindSpeed > 0 {
+		s.WindSteadiness = math.Min(1, math.Hypot(east, north)/n/s.WindSpeed)
+	}
 	return s, true
 }

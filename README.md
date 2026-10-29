@@ -141,9 +141,13 @@ included, so what this package fetches is not for a language model to read.
 
 `weather` is the weather an activity was done in, from [Open-Meteo](https://open-meteo.com/)'s
 archive: temperature, dew point, humidity, wind and gusts, surface pressure and sunlight, hourly,
-at a few places along the route -- one every 10 km -- in one request, and at any sample by
-interpolating between the hours. `Headings` gives each sample its direction of travel and
-`Relative` the wind as the athlete met it, head and cross.
+at a few places along the route -- one every 10 km, or twenty spread evenly along a route of
+over 190 km -- in one request, and at any sample by interpolating between the hours at the place
+nearest it, so a marathon or a long ride meets each place's weather when it got there.
+`Headings` gives each sample its direction of travel and `Relative` the wind as the athlete met
+it, head and cross. `Summarise` gives the weather over the whole activity, and, since a day that
+warmed or a wind that turned is lost in an average, at its start and end and how steady the
+wind's direction was.
 
 It is a model's weather: ECMWF's IFS at about 9 km for recent days, the ERA5 reanalysis at about
 25 km once it has caught up five days on, with the wind at 10 m in the open. Fetching sends the

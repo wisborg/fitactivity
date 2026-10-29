@@ -270,3 +270,57 @@ func TestHeatAndAltitudeCost(t *testing.T) {
 		t.Errorf("1300 m: %v, %v, %v", cost, highest, ok)
 	}
 }
+
+// line is a track due north from 10°N, 20°E, a sample each 100 m, over km
+// kilometres at 10 m/s.
+func line(km int) *fitactivity.Track {
+	t := &fitactivity.Track{Sport: "cycling"}
+	for i := 0; i <= km*10; i++ {
+		t.Samples = append(t.Samples, fitactivity.Sample{Time: t0.Add(time.Duration(i*10) * time.Second),
+			HasGPS: true, Lat: 10 + float64(i)*100/111195, Lon: 20})
+	}
+	return t
+}
+
+// Up to 190 km, a place each 10 km; beyond, twenty spread evenly, never
+// fewer than a shorter activity was given.
+func TestPlaces_Spread(t *testing.T) {
+	for km, want := range map[int]int{42: 5, 190: 20, 210: 20, 400: 20, 1000: 20} {
+		pts := Places(line(km))
+		if len(pts) != want {
+			t.Errorf("%d km: %d places, want %d", km, len(pts), want)
+			continue
+		}
+		if km > 190 {
+			first, last := pts[0], pts[len(pts)-1]
+			if gone := greatCircle(first[0], first[1], last[0], last[1]); gone < float64(km)*1000*0.9 {
+				t.Errorf("%d km: the places reach only %.0f m along it", km, gone)
+			}
+		}
+	}
+}
+
+// Over a long point-to-point day the summary keeps the start and the end:
+// a morning's cool and an afternoon's heat, and a westerly that turned
+// easterly, which the averages would call a light northerly.
+func TestSummarise_LongDay(t *testing.T) {
+	tr := line(200) // 5 h 33 min
+	var south, north Place
+	south.Lat, south.Lon, north.Lat, north.Lon = 10, 20, 11.8, 20
+	for h := -1; h <= 7; h++ {
+		f := float64(h) / 6
+		c := Conditions{Time: t0.Add(time.Duration(h) * time.Hour), Temperature: 12 + 12*f, WindSpeed: 5, WindFrom: math.Mod(270+180*f, 360)}
+		south.Hours, north.Hours = append(south.Hours, c), append(north.Hours, c)
+	}
+	s, ok := Summarise(&Report{Places: []Place{south, north}}, tr)
+	if !ok || s.Start.Temperature != 12 || math.Abs(s.End.Temperature-23.1) > 0.1 ||
+		s.Start.WindFrom != 270 || Apart(s.End.WindFrom, 76.5) > 1 || s.WindSteadiness > 0.7 {
+		t.Errorf("start %+v, end %+v, steadiness %.2f", s.Start, s.End, s.WindSteadiness)
+	}
+
+	steady, _ := outAndBack()
+	_, r := outAndBack()
+	if s, _ := Summarise(r, steady); math.Abs(s.WindSteadiness-1) > 1e-9 {
+		t.Errorf("a steady wind's steadiness %v", s.WindSteadiness)
+	}
+}

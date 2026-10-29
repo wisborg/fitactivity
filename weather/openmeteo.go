@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"os"
@@ -121,13 +122,30 @@ const placeSpacing = 10000.0
 const maxPlaces = 20
 
 // Places are where along t its weather is asked for: its first fix, then
-// one each placeSpacing metres along it, further apart for an activity that
-// would otherwise need more than maxPlaces.
+// one each placeSpacing metres along it -- or, for an activity that would
+// need more than maxPlaces, maxPlaces spread evenly along it, so a 210 km
+// ride is asked for at 20 places 11 km apart rather than 11 places 20 km
+// apart.
 func Places(t *fitactivity.Track) [][2]float64 {
-	for spacing := placeSpacing; ; spacing *= 2 {
+	var total float64
+	var last [2]float64
+	first := true
+	for _, s := range t.Samples {
+		if !s.HasGPS {
+			continue
+		}
+		if !first {
+			total += greatCircle(last[0], last[1], s.Lat, s.Lon)
+		}
+		last, first = [2]float64{s.Lat, s.Lon}, false
+	}
+	// The places are where the distance along t passes each multiple of
+	// spacing, so total/(maxPlaces-1) gives maxPlaces, the last at the end;
+	// the loop is only for rounding.
+	for spacing := math.Max(placeSpacing, total/(maxPlaces-1)*(1-1e-9)); ; spacing *= 1.01 {
 		var pts [][2]float64
-		var last [2]float64
 		var along float64
+		next := spacing
 		for _, s := range t.Samples {
 			if !s.HasGPS {
 				continue
@@ -139,8 +157,8 @@ func Places(t *fitactivity.Track) [][2]float64 {
 			}
 			along += greatCircle(last[0], last[1], p[0], p[1])
 			last = p
-			if along >= spacing {
-				pts, along = append(pts, p), 0
+			if along >= next {
+				pts, next = append(pts, p), next+spacing
 			}
 		}
 		if len(pts) <= maxPlaces {
