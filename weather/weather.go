@@ -50,6 +50,15 @@ type Conditions struct {
 	// Radiation is the sunlight reaching a level surface, in W/m²:
 	// shortwave, direct and diffuse together.
 	Radiation float64
+	// HasSky says the hour had the rest: WeatherCode, the WMO code of
+	// the weather over the hour before, as Open-Meteo gives it (see
+	// Describe); CloudCover, in per cent; Precipitation, what fell over
+	// the hour before, in mm; and IsDay, whether the sun was up.
+	HasSky        bool
+	WeatherCode   int
+	CloudCover    float64
+	Precipitation float64
+	IsDay         bool
 }
 
 // Place is the hourly weather at one point along an activity.
@@ -134,7 +143,23 @@ func (p *Place) at(t time.Time) (Conditions, bool) {
 	if u != 0 || v != 0 {
 		from = math.Mod(math.Atan2(u, v)*180/math.Pi+360, 360)
 	}
+	// The code and the precipitation are of the hour before the one they
+	// are given at, so t takes the next hour's; the cloud cover is of the
+	// moment, between the two; day is the nearer hour's.
+	sky := b
+	if t.Equal(a.Time) {
+		sky = a
+	}
+	if b.Time.Sub(t) > t.Sub(a.Time) {
+		sky.IsDay = a.IsDay
+	}
+	sky.CloudCover = mix(a.CloudCover, b.CloudCover)
+	if !a.HasSky {
+		sky.HasSky = false
+	}
 	return Conditions{
+		HasSky: sky.HasSky, WeatherCode: sky.WeatherCode, CloudCover: sky.CloudCover,
+		Precipitation: sky.Precipitation, IsDay: sky.IsDay,
 		Time:        t,
 		Temperature: mix(a.Temperature, b.Temperature),
 		DewPoint:    mix(a.DewPoint, b.DewPoint),
@@ -201,6 +226,16 @@ type Summary struct {
 	// Start and End are the weather at the first and last minute the
 	// report has any for, where the athlete was then.
 	Start, End Conditions
+	// HasSky says there was a weather code for the minutes: WeatherCode
+	// is the most significant weather met over at least a tenth of them
+	// (see Describe and Kind), Precipitation what fell on the way in mm,
+	// CloudCover the average cover in per cent, and Day whether most of
+	// the minutes were in daylight.
+	HasSky        bool
+	WeatherCode   int
+	Precipitation float64
+	CloudCover    float64
+	Day           bool
 	// WindSteadiness is how much of the wind kept to one direction: the
 	// speed of the average wind, as a vector, over its average speed. It is
 	// 1 for a wind that never turned and near 0 for one that blew as much
@@ -214,6 +249,8 @@ type Summary struct {
 func Summarise(r *Report, t *fitactivity.Track) (Summary, bool) {
 	var s Summary
 	var n, east, north float64
+	var skyN, day float64
+	codes := map[int]float64{}
 	next := time.Time{}
 	for _, smp := range t.Samples {
 		if smp.Time.Before(next) {
@@ -239,6 +276,15 @@ func Summarise(r *Report, t *fitactivity.Track) (Summary, bool) {
 		s.WindSpeed += c.WindSpeed
 		s.Radiation += c.Radiation
 		s.Gusts = math.Max(s.Gusts, c.Gusts)
+		if c.HasSky {
+			codes[c.WeatherCode]++
+			s.Precipitation += c.Precipitation / 60
+			s.CloudCover += c.CloudCover
+			if c.IsDay {
+				day++
+			}
+			skyN++
+		}
 		e, no := toward(c.WindFrom)
 		east, north = east+e*c.WindSpeed, north+no*c.WindSpeed
 		n++
@@ -251,6 +297,11 @@ func Summarise(r *Report, t *fitactivity.Track) (Summary, bool) {
 	s.WindSpeed /= n
 	s.Radiation /= n
 	s.WindFrom = math.Mod(math.Atan2(east, north)*180/math.Pi+360, 360)
+	if skyN > 0 {
+		s.HasSky, s.WeatherCode = true, mostSignificant(codes)
+		s.CloudCover /= skyN
+		s.Day = day >= skyN/2
+	}
 	if s.WindSpeed > 0 {
 		s.WindSteadiness = math.Min(1, math.Hypot(east, north)/n/s.WindSpeed)
 	}

@@ -147,7 +147,10 @@ nearest it, so a marathon or a long ride meets each place's weather when it got 
 `Headings` gives each sample its direction of travel and `Relative` the wind as the athlete met
 it, head and cross. `Summarise` gives the weather over the whole activity, and, since a day that
 warmed or a wind that turned is lost in an average, at its start and end and how steady the
-wind's direction was.
+wind's direction was. Each hour has its WMO weather code too, with its cloud cover, what fell and
+whether it was day: `Describe` puts a code in words ("light rain") and `Kind` says what an icon
+would show, and the summary gives the most significant weather that held for a tenth of the
+activity -- an hour's rain in a marathon, not a minute's.
 
 It is a model's weather: ECMWF's IFS at about 9 km for recent days, the ERA5 reanalysis at about
 25 km once it has caught up five days on, with the wind at 10 m in the open. Fetching sends the

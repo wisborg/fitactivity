@@ -31,6 +31,11 @@ var hourly = []string{
 	"surface_pressure", "shortwave_radiation",
 }
 
+// sky are the hourly variables asked for besides, which an hour may lack
+// without being left out: the WMO weather code, the cloud cover, the
+// precipitation over the hour before, and whether it was day.
+var sky = []string{"weather_code", "cloud_cover", "precipitation", "is_day"}
+
 // ErrNoPosition is an activity with no fix to ask the weather for.
 var ErrNoPosition = errors.New("the activity records no position to ask the weather for")
 
@@ -89,7 +94,7 @@ func (c *Client) Fetch(ctx context.Context, t *fitactivity.Track) (*Report, erro
 		"longitude":       {join(pts, func(p [2]float64) float64 { return p[1] })},
 		"start_date":      {start.Format("2006-01-02")},
 		"end_date":        {end.Format("2006-01-02")},
-		"hourly":          {strings.Join(hourly, ",")},
+		"hourly":          {strings.Join(append(append([]string{}, hourly...), sky...), ",")},
 		"wind_speed_unit": {"ms"},
 		"timeformat":      {"unixtime"},
 	}
@@ -232,6 +237,12 @@ func decode(data []byte) (*Report, error) {
 				return nil, fmt.Errorf("decoding Open-Meteo's answer: no %s for each hour", name)
 			}
 		}
+		skyCols := make([][]*float64, len(sky))
+		for i, name := range sky {
+			if err := json.Unmarshal(a.Hourly[name], &skyCols[i]); err != nil || len(skyCols[i]) != len(times) {
+				skyCols[i] = nil
+			}
+		}
 		p := Place{Lat: a.Latitude, Lon: a.Longitude, Elevation: a.Elevation}
 	hours:
 		for h, ts := range times {
@@ -242,9 +253,22 @@ func decode(data []byte) (*Report, error) {
 				}
 				v[i] = *cols[i][h]
 			}
-			p.Hours = append(p.Hours, Conditions{Time: time.Unix(ts, 0).UTC(),
+			c := Conditions{Time: time.Unix(ts, 0).UTC(),
 				Temperature: v[0], DewPoint: v[1], Humidity: v[2],
-				WindSpeed: v[3], Gusts: v[4], WindFrom: v[5], Pressure: v[6], Radiation: v[7]})
+				WindSpeed: v[3], Gusts: v[4], WindFrom: v[5], Pressure: v[6], Radiation: v[7]}
+			var w [4]float64
+			c.HasSky = true
+			for i := range sky {
+				if skyCols[i] == nil || skyCols[i][h] == nil {
+					c.HasSky = false
+					break
+				}
+				w[i] = *skyCols[i][h]
+			}
+			if c.HasSky {
+				c.WeatherCode, c.CloudCover, c.Precipitation, c.IsDay = int(w[0]), w[1], w[2], w[3] != 0
+			}
+			p.Hours = append(p.Hours, c)
 		}
 		r.Places = append(r.Places, p)
 	}
