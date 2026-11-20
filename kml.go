@@ -341,11 +341,17 @@ func kmlPoint(parts []string, sep string, abs bool) (fix, error) {
 	return f, nil
 }
 
-// fr24Number and fr24Callsign are a flight number, "TG950", and a callsign,
-// "THA950", as a Flightradar24 KML names its document: "TG950/THA950".
+// fr24Name is a flight number, "TG950", and a callsign, "THA950", as a
+// Flightradar24 KML names its document: "TG950/THA950" -- or "-/RKU2" for a
+// flight with no number, an air taxi's or a test flight's, which has a
+// callsign all the same.
 var (
-	fr24Name = regexp.MustCompile(`^([A-Z0-9]{2}[0-9]{1,4}[A-Z]?)/([A-Z]{3}[0-9A-Z]{1,5})$`)
+	fr24Name = regexp.MustCompile(`^(?:([A-Z0-9]{2}[0-9]{1,4}[A-Z]?)|-)/([A-Z]{3}[0-9A-Z]{1,5})$`)
 	iataCode = regexp.MustCompile(`\b[A-Z]{3}\b`)
+	// fr24Departure is the caption of a departure time -- scheduled,
+	// actual or estimated -- which the pop-up writes after the airports:
+	// a scheduled flight has STD first, one with no schedule only ATD.
+	fr24Departure = regexp.MustCompile(`\b[SAE]TD\b`)
 	// fr24Aircraft is the aircraft as the pop-up's text has it: "Aircraft
 	// (B77W) Boeing 777-3D7(ER)", running to the registration's caption
 	// or the end, the type in brackets where it is known.
@@ -356,11 +362,12 @@ var (
 )
 
 // fr24KMLFlight is the flight a Flightradar24 KML document is of, from its name
-// -- "TG950/THA950", the number and the callsign -- and, where its
-// description says, the airports it flew between: the description is the
-// HTML of a pop-up, "BKK Bangkok CPH Copenhagen STD 18:10 UTC ...", read
-// only for the last two codes that come before the scheduled time -- and
-// the aircraft that flew it, "... Aircraft (B77W) Boeing 777-3D7(ER)
+// -- "TG950/THA950", the number and the callsign, or "-/RKU2", the callsign
+// alone -- and, where its description says, the airports it flew between:
+// the description is the HTML of a pop-up, "BKK Bangkok CPH Copenhagen STD
+// 18:10 UTC ...", read only for the last two codes that come before the
+// first departure time with two codes before it -- and the aircraft that
+// flew it, "... Aircraft (B77W) Boeing 777-3D7(ER)
 // Registration HS-TKX", where those are known. A document whose name is
 // not a flight's is not one, whatever its description.
 func fr24KMLFlight(name, description string) (Flight, bool) {
@@ -370,12 +377,13 @@ func fr24KMLFlight(name, description string) (Flight, bool) {
 	}
 	f := Flight{Number: m[1], Callsign: m[2]}
 	text := spaces.ReplaceAllString(html.UnescapeString(htmlTag.ReplaceAllString(description, " ")), " ")
-	// The last two codes before the scheduled time: the description also
+	// The last two codes before the departure time: the description also
 	// credits the aircraft's photographer, whose name may be a code too --
-	// "© NRT Spotter" -- and comes first.
-	if before, _, ok := strings.Cut(text, " STD "); ok {
-		if codes := iataCode.FindAllString(before, -1); len(codes) >= 2 {
+	// "© NRT Spotter" -- or a caption, "© ATD Photos", and comes first.
+	for _, at := range fr24Departure.FindAllStringIndex(text, -1) {
+		if codes := iataCode.FindAllString(text[:at[0]], -1); len(codes) >= 2 {
 			f.From, f.To = codes[len(codes)-2], codes[len(codes)-1]
+			break
 		}
 	}
 	if m := fr24Aircraft.FindStringSubmatch(text); m != nil {

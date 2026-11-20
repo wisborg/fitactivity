@@ -64,6 +64,25 @@ func TestKMLFlightAircraftWhereKnown(t *testing.T) {
 	}
 }
 
+// A flight with no number is named by its callsign alone, "-/RKU2", and one
+// with no schedule has its actual departure time where the scheduled one
+// would be -- as Stewart Island Flights' Islanders are written.
+func TestKMLFlightWithNoNumberOrSchedule(t *testing.T) {
+	description := "- / RKU2 Stewart Island Flights © ATD Photos SZS Oban IVC Invercargill ATD 22:28 UTC ETA 22:45 UTC " +
+		"Aircraft (BN2P) Britten-Norman BN-2A-26 Islander Registration ZK-FWZ"
+	f, ok := fr24KMLFlight("-/RKU2", description)
+	want := Flight{Callsign: "RKU2", From: "SZS", To: "IVC",
+		Aircraft: "Britten-Norman BN-2A-26 Islander", AircraftType: "BN2P", Registration: "ZK-FWZ"}
+	if !ok || f != want {
+		t.Errorf("read as %+v, %v; want %+v", f, ok, want)
+	}
+	for _, name := range []string{"-/-", "-/", "-"} {
+		if f, ok := fr24KMLFlight(name, description); ok {
+			t.Errorf("%q, with no callsign, read as %+v", name, f)
+		}
+	}
+}
+
 // A course between two samples turns the short way round.
 func TestCourseInterpolatesTheShortWay(t *testing.T) {
 	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
